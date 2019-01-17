@@ -1,92 +1,44 @@
-﻿using Neo.Network.P2P.Payloads;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Neo.Network.P2P.Payloads;
 
 namespace Neo.Ledger
 {
     public class MemoryPool : IReadOnlyCollection<Transaction>
     {
-        private class PoolItem
-        {
-            public readonly Transaction Transaction;
-            public readonly DateTime Timestamp;
-
-            public PoolItem(Transaction tx)
-            {
-                Transaction = tx;
-                Timestamp = DateTime.UtcNow;
-            }
-        }
-
-        private readonly ConcurrentDictionary<UInt256, PoolItem> _mem_pool_fee = new ConcurrentDictionary<UInt256, PoolItem>();
-        private readonly ConcurrentDictionary<UInt256, PoolItem> _mem_pool_free = new ConcurrentDictionary<UInt256, PoolItem>();
-
-        public int Capacity { get; }
-        public int Count => _mem_pool_fee.Count + _mem_pool_free.Count;
+        private readonly ConcurrentDictionary<UInt256, PoolItem> mempoolFee = new ConcurrentDictionary<UInt256, PoolItem>();
+        private readonly ConcurrentDictionary<UInt256, PoolItem> mempoolFree = new ConcurrentDictionary<UInt256, PoolItem>();
 
         public MemoryPool(int capacity)
         {
-            Capacity = capacity;
+            this.Capacity = capacity;
         }
+
+        public int Capacity { get; }
+
+        public int Count => this.mempoolFee.Count + this.mempoolFree.Count;
 
         public void Clear()
         {
-            _mem_pool_free.Clear();
-            _mem_pool_fee.Clear();
+            this.mempoolFree.Clear();
+            this.mempoolFee.Clear();
         }
 
-        public bool ContainsKey(UInt256 hash) => _mem_pool_free.ContainsKey(hash) || _mem_pool_fee.ContainsKey(hash);
+        public bool ContainsKey(UInt256 hash) => this.mempoolFree.ContainsKey(hash) || this.mempoolFee.ContainsKey(hash);
 
         public IEnumerator<Transaction> GetEnumerator()
         {
-            return
-                _mem_pool_fee.Select(p => p.Value.Transaction)
-                .Concat(_mem_pool_free.Select(p => p.Value.Transaction))
+            return this.mempoolFee
+                .Select(p => p.Value.Transaction)
+                .Concat(this.mempoolFree.Select(p => p.Value.Transaction))
                 .GetEnumerator();
         }
 
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-        static void RemoveLowestFee(ConcurrentDictionary<UInt256, PoolItem> pool, int count)
-        {
-            if (count <= 0) return;
-            if (count >= pool.Count)
-            {
-                pool.Clear();
-            }
-            else
-            {
-                UInt256[] delete = pool.AsParallel()
-                    .OrderBy(p => p.Value.Transaction.NetworkFee / p.Value.Transaction.Size)
-                    .ThenBy(p => p.Value.Transaction.NetworkFee)
-                    .ThenBy(p => new BigInteger(p.Key.ToArray()))
-                    .Take(count)
-                    .Select(p => p.Key)
-                    .ToArray();
-
-                foreach (UInt256 hash in delete)
-                {
-                    pool.TryRemove(hash, out _);
-                }
-            }
-        }
-
-        static void RemoveOldest(ConcurrentDictionary<UInt256, PoolItem> pool, DateTime time)
-        {
-            UInt256[] hashes = pool
-                .Where(p => p.Value.Timestamp < time)
-                .Select(p => p.Key)
-                .ToArray();
-
-            foreach (UInt256 hash in hashes)
-            {
-                pool.TryRemove(hash, out _);
-            }
-        }
+        IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
 
         public bool TryAdd(UInt256 hash, Transaction tx)
         {
@@ -94,29 +46,28 @@ namespace Neo.Ledger
 
             if (tx.IsLowPriority)
             {
-                pool = _mem_pool_free;
+                pool = this.mempoolFree;
             }
             else
             {
-                pool = _mem_pool_fee;
+                pool = this.mempoolFee;
             }
 
             pool.TryAdd(hash, new PoolItem(tx));
 
-            if (Count > Capacity)
+            if (this.Count > this.Capacity)
             {
-                RemoveOldest(_mem_pool_free, DateTime.UtcNow.AddSeconds(-Blockchain.SecondsPerBlock * 20));
+                MemoryPool.RemoveOldest(this.mempoolFree, DateTime.UtcNow.AddSeconds(-Blockchain.SecondsPerBlock * 20));
 
-                var exceed = Count - Capacity;
-
+                var exceed = this.Count - this.Capacity;
                 if (exceed > 0)
                 {
-                    RemoveLowestFee(_mem_pool_free, exceed);
-                    exceed = Count - Capacity;
+                    MemoryPool.RemoveLowestFee(this.mempoolFree, exceed);
+                    exceed = this.Count - this.Capacity;
 
                     if (exceed > 0)
                     {
-                        RemoveLowestFee(_mem_pool_fee, exceed);
+                        MemoryPool.RemoveLowestFee(this.mempoolFee, exceed);
                     }
                 }
             }
@@ -126,12 +77,12 @@ namespace Neo.Ledger
 
         public bool TryRemove(UInt256 hash, out Transaction tx)
         {
-            if (_mem_pool_free.TryRemove(hash, out PoolItem item))
+            if (this.mempoolFree.TryRemove(hash, out PoolItem item))
             {
                 tx = item.Transaction;
                 return true;
             }
-            else if (_mem_pool_fee.TryRemove(hash, out item))
+            else if (this.mempoolFee.TryRemove(hash, out item))
             {
                 tx = item.Transaction;
                 return true;
@@ -145,12 +96,12 @@ namespace Neo.Ledger
 
         public bool TryGetValue(UInt256 hash, out Transaction tx)
         {
-            if (_mem_pool_free.TryGetValue(hash, out PoolItem item))
+            if (this.mempoolFree.TryGetValue(hash, out PoolItem item))
             {
                 tx = item.Transaction;
                 return true;
             }
-            else if (_mem_pool_fee.TryGetValue(hash, out item))
+            else if (this.mempoolFee.TryGetValue(hash, out item))
             {
                 tx = item.Transaction;
                 return true;
@@ -159,6 +110,47 @@ namespace Neo.Ledger
             {
                 tx = null;
                 return false;
+            }
+        }
+
+        internal static void RemoveLowestFee(ConcurrentDictionary<UInt256, PoolItem> pool, int count)
+        {
+            if (count <= 0)
+            {
+                return;
+            }
+
+            if (count >= pool.Count)
+            {
+                pool.Clear();
+            }
+            else
+            {
+                var delete = pool.AsParallel()
+                    .OrderBy(p => p.Value.Transaction.NetworkFee / p.Value.Transaction.Size)
+                    .ThenBy(p => p.Value.Transaction.NetworkFee)
+                    .ThenBy(p => new BigInteger(p.Key.ToArray()))
+                    .Take(count)
+                    .Select(p => p.Key)
+                    .ToArray();
+
+                foreach (var hash in delete)
+                {
+                    pool.TryRemove(hash, out _);
+                }
+            }
+        }
+
+        internal static void RemoveOldest(ConcurrentDictionary<UInt256, PoolItem> pool, DateTime time)
+        {
+            var hashes = pool
+                .Where(p => p.Value.Timestamp < time)
+                .Select(p => p.Key)
+                .ToArray();
+
+            foreach (var hash in hashes)
+            {
+                pool.TryRemove(hash, out _);
             }
         }
     }

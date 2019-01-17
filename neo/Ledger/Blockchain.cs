@@ -26,9 +26,6 @@ namespace Neo.Ledger
         public const uint DecrementInterval = 2000000;
         public const uint MaxValidators = 1024;
 
-        private const int MemoryPoolMaxTransactions = 50_000;
-        private const int MaxTxToReverifyPerIdle = 10;
-
         public static readonly uint SecondsPerBlock = ProtocolSettings.Default.SecondsPerBlock;
         public static readonly uint[] GenerationAmount =
         {
@@ -125,7 +122,7 @@ namespace Neo.Ledger
 
         internal readonly RelayCache RelayCache = new RelayCache(100);
 
-        private static readonly object lockObj = new object();
+        private static readonly object LockObj = new object();
         private static Blockchain instance;
 
         private readonly NeoSystem system;
@@ -133,8 +130,8 @@ namespace Neo.Ledger
         private readonly Dictionary<UInt256, Block> blockCache = new Dictionary<UInt256, Block>();
         private readonly Dictionary<uint, LinkedList<Block>> blockCacheUnverified = new Dictionary<uint, LinkedList<Block>>();
         private readonly HashSet<IActorRef> subscriberActorRefs = new HashSet<IActorRef>();
-        private readonly MemoryPool mem_pool = new MemoryPool(50_000);
-        private readonly ConcurrentDictionary<UInt256, Transaction> mem_pool_unverified = new ConcurrentDictionary<UInt256, Transaction>();
+        private readonly MemoryPool mempool = new MemoryPool(50_000);
+        private readonly ConcurrentDictionary<UInt256, Transaction> unverifiedMempool = new ConcurrentDictionary<UInt256, Transaction>();
 
         private uint storedHeaderCount = 0;
         private Snapshot currentSnapshot;
@@ -149,7 +146,7 @@ namespace Neo.Ledger
             this.system = system;
             this.Store = store;
 
-            lock (lockObj)
+            lock (LockObj)
             {
                 if (instance != null)
                 {
@@ -226,7 +223,7 @@ namespace Neo.Ledger
         public static UInt160 GetConsensusAddress(ECPoint[] validators) =>
             Contract
                 .CreateMultiSigRedeemScript(
-                    validators.Length - ((validators.Length - 1) / 3), 
+                    validators.Length - ((validators.Length - 1) / 3),
                     validators)
                 .ToScriptHash();
 
@@ -247,7 +244,7 @@ namespace Neo.Ledger
 
         public bool ContainsTransaction(UInt256 hash)
         {
-            if (this.mem_pool.ContainsKey(hash))
+            if (this.mempool.ContainsKey(hash))
             {
                 return true;
             }
@@ -277,11 +274,11 @@ namespace Neo.Ledger
 
         public Snapshot GetSnapshot() => this.Store.GetSnapshot();
 
-        public IEnumerable<Transaction> GetMemoryPool() => this.mem_pool;
+        public IEnumerable<Transaction> GetMemoryPool() => this.mempool;
 
         public Transaction GetTransaction(UInt256 hash)
         {
-            if (this.mem_pool.TryGetValue(hash, out Transaction transaction))
+            if (this.mempool.TryGetValue(hash, out Transaction transaction))
             {
                 return transaction;
             }
@@ -350,7 +347,7 @@ namespace Neo.Ledger
 
         internal Transaction GetUnverifiedTransaction(UInt256 hash)
         {
-            this.mem_pool_unverified.TryGetValue(hash, out Transaction transaction);
+            this.unverifiedMempool.TryGetValue(hash, out Transaction transaction);
             return transaction;
         }
 
@@ -428,7 +425,7 @@ namespace Neo.Ledger
 
             blocks.AddLast(block);
         }
-        
+
         private RelayResultReason OnNewBlock(Block block)
         {
             if (block.Index <= this.Height)
@@ -465,7 +462,7 @@ namespace Neo.Ledger
             if (block.Index == Height + 1)
             {
                 var blockToPersist = block;
-                var blocksToPersistList = new List<Block>();                                
+                var blocksToPersistList = new List<Block>();
                 while (true)
                 {
                     blocksToPersistList.Add(blockToPersist);
@@ -621,7 +618,7 @@ namespace Neo.Ledger
             }
 
             if (!transaction.Verify(currentSnapshot, this.GetMemoryPool()))
-            { 
+            {
                 return RelayResultReason.Invalid;
             }
 
@@ -630,7 +627,7 @@ namespace Neo.Ledger
                 return RelayResultReason.PolicyFail;
             }
 
-            if (!this.mem_pool.TryAdd(transaction.Hash, transaction))
+            if (!this.mempool.TryAdd(transaction.Hash, transaction))
             {
                 return RelayResultReason.OutOfMemory;
             }
@@ -643,19 +640,25 @@ namespace Neo.Ledger
         private void OnPersistCompleted(Block block)
         {
             this.blockCache.Remove(block.Hash);
-            foreach (Transaction tx in block.Transactions)
-                mem_pool.TryRemove(tx.Hash, out _);
-            mem_pool_unverified.Clear();
-            foreach (Transaction tx in mem_pool
-                .OrderByDescending(p => p.NetworkFee / p.Size)
-                .ThenByDescending(p => p.NetworkFee)
-                .ThenByDescending(p => new BigInteger(p.Hash.ToArray())))
+            foreach (var tx in block.Transactions)
             {
-                mem_pool_unverified.TryAdd(tx.Hash, tx);
-                Self.Tell(tx, ActorRefs.NoSender);
+                this.mempool.TryRemove(tx.Hash, out _);
             }
 
-            mem_pool.Clear();
+            this.unverifiedMempool.Clear();
+
+            var unverifiedTransactions = this.mempool
+                .OrderByDescending(p => p.NetworkFee / p.Size)
+                .ThenByDescending(p => p.NetworkFee)
+                .ThenByDescending(p => new BigInteger(p.Hash.ToArray()));
+
+            foreach (var tx in unverifiedTransactions)
+            {
+                this.unverifiedMempool.TryAdd(tx.Hash, tx);
+                this.Self.Tell(tx, ActorRefs.NoSender);
+            }
+
+            this.mempool.Clear();
 
             var persistCompletedMessage = new PersistCompleted(block);
             this.system.ConsensusServiceActorRef?.Tell(persistCompletedMessage);
@@ -738,7 +741,7 @@ namespace Neo.Ledger
                                 snapshot
                                     .SpentCoins
                                     .GetAndChange(
-                                        input.PrevHash, 
+                                        input.PrevHash,
                                         () => new SpentCoinState
                                         {
                                             TransactionHash = input.PrevHash,
@@ -812,8 +815,8 @@ namespace Neo.Ledger
                             {
                                 var removeSuccess = snapshot
                                     .SpentCoins
-                                    .TryGet(coinReference.PrevHash)?
-                                    .Items
+                                    .TryGet(coinReference.PrevHash)
+                                    ?.Items
                                     .Remove(coinReference.PrevIndex);
 
                                 if (removeSuccess == true)
@@ -828,7 +831,7 @@ namespace Neo.Ledger
                             var validatorState = snapshot
                                 .Validators
                                 .GetAndChange(
-                                    enrollmentTransaction.PublicKey, 
+                                    enrollmentTransaction.PublicKey,
                                     () => new ValidatorState(enrollmentTransaction.PublicKey));
 
                             validatorState.Registered = true;
@@ -854,7 +857,7 @@ namespace Neo.Ledger
                             snapshot
                                 .Contracts
                                 .GetOrAdd(
-                                    publishTransaction.ScriptHash, 
+                                    publishTransaction.ScriptHash,
                                     () => new ContractState
                                     {
                                         Script = publishTransaction.Script,

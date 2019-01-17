@@ -55,8 +55,8 @@ namespace Neo.Extensions
                         context.Add(new Tuple<StackItem, ContractParameter>(item, parameter));
                         parameter.Value = map
                             .Select(p => new KeyValuePair<ContractParameter, ContractParameter>(
-                                StackItemExtensions.ToParameter(p.Key, context), 
-                                ToParameter(p.Value, context)))
+                                StackItemExtensions.ToParameter(p.Key, context),
+                                StackItemExtensions.ToParameter(p.Value, context)))
                             .ToList();
                     }
 
