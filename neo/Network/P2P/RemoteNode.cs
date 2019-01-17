@@ -1,61 +1,139 @@
-﻿using Akka.Actor;
-using Akka.Configuration;
-using Akka.IO;
-using Neo.Cryptography;
-using Neo.IO;
-using Neo.IO.Actors;
-using Neo.Ledger;
-using Neo.Network.P2P.Payloads;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using Akka.Actor;
+using Akka.IO;
+using Neo.Cryptography;
+using Neo.Extensions;
+using Neo.IO;
+using Neo.Ledger;
+using Neo.Network.P2P.Payloads;
 
 namespace Neo.Network.P2P
 {
     public class RemoteNode : Connection
     {
-        internal class Relay { public IInventory Inventory; }
-
         private readonly NeoSystem system;
         private readonly IActorRef protocol;
-        private readonly Queue<Message> message_queue_high = new Queue<Message>();
-        private readonly Queue<Message> message_queue_low = new Queue<Message>();
-        private ByteString msg_buffer = ByteString.Empty;
+        private readonly Queue<Message> messageQueueHigh = new Queue<Message>();
+        private readonly Queue<Message> messageQueueLow = new Queue<Message>();
+        private ByteString messageBuffer = ByteString.Empty;
         private bool ack = true;
-        private BloomFilter bloom_filter;
+        private BloomFilter bloomFilter;
         private bool verack = false;
-
-        public IPEndPoint Listener => new IPEndPoint(Remote.Address, ListenerPort);
-        public override int ListenerPort => Version?.Port ?? 0;
-        public VersionPayload Version { get; private set; }
 
         public RemoteNode(NeoSystem system, object connection, IPEndPoint remote, IPEndPoint local)
             : base(connection, remote, local)
         {
             this.system = system;
             this.protocol = Context.ActorOf(ProtocolHandler.Props(system));
-            LocalNode.Singleton.RemoteNodes.TryAdd(Self, this);
-            SendMessage(Message.Create("version", VersionPayload.Create(LocalNode.Singleton.ListenerPort, LocalNode.Nonce, LocalNode.UserAgent, Blockchain.Singleton.Height)));
+            LocalNode.Instance.RemoteNodes.TryAdd(this.Self, this);
+
+            var versionPayload = VersionPayload.Create(
+                LocalNode.Instance.ListenerPort, 
+                LocalNode.Nonce, 
+                LocalNode.UserAgent, 
+                Blockchain.Instance.Height);
+
+            var versionMessage = Message.Create("version", versionPayload);
+            this.SendMessage(versionMessage);
         }
+        
+        public IPEndPoint Listener => new IPEndPoint(this.Remote.Address, this.ListenerPort);
+
+        public override int ListenerPort => this.Version?.Port ?? 0;
+
+        public VersionPayload Version { get; private set; }
+
+        internal static Props Props(NeoSystem system, object connection, IPEndPoint remote, IPEndPoint local) =>
+            Akka.Actor.Props
+                .Create(() => new RemoteNode(system, connection, remote, local))
+                .WithMailbox("remote-node-mailbox");
+        
+        protected override void OnAck()
+        {
+            this.ack = true;
+            this.CheckMessageQueue();
+        }
+
+        protected override void OnData(ByteString data)
+        {
+            this.messageBuffer = this.messageBuffer.Concat(data);
+            for (var message = this.TryParseMessage(); message != null; message = this.TryParseMessage())
+            {
+                this.protocol.Tell(message);
+            }
+        }
+
+        protected override void OnReceive(object message)
+        {
+            base.OnReceive(message);
+            switch (message)
+            {
+                case Message msg:
+                    this.EnqueueMessage(msg);
+                    break;
+                case IInventory inventory:
+                    this.OnSend(inventory);
+                    break;
+                case Relay relay:
+                    this.OnRelay(relay.Inventory);
+                    break;
+                case ProtocolHandler.SetVersion setVersion:
+                    this.OnSetVersion(setVersion.Version);
+                    break;
+                case ProtocolHandler.SetVerack _:
+                    this.OnSetVerack();
+                    break;
+                case ProtocolHandler.SetFilter setFilter:
+                    this.OnSetFilter(setFilter.Filter);
+                    break;
+            }
+        }
+
+        protected override void PostStop()
+        {
+            LocalNode.Instance.RemoteNodes.TryRemove(this.Self, out _);
+            base.PostStop();
+        }
+
+        protected override SupervisorStrategy SupervisorStrategy() =>
+            new OneForOneStrategy(
+                ex =>
+                {
+                    this.Disconnect(true);
+                    return Directive.Stop;
+                },
+                loggingEnabled: false);
 
         private void CheckMessageQueue()
         {
-            if (!verack || !ack) return;
-            Queue<Message> queue = message_queue_high;
-            if (queue.Count == 0) queue = message_queue_low;
-            if (queue.Count == 0) return;
-            SendMessage(queue.Dequeue());
+            if (!this.verack || !this.ack)
+            {
+                return;
+            }
+
+            var messagesQueue = this.messageQueueHigh;
+            if (messagesQueue.Count == 0)
+            {
+                messagesQueue = this.messageQueueLow;
+            }
+
+            if (messagesQueue.Count == 0)
+            {
+                return;
+            }
+
+            this.SendMessage(messagesQueue.Dequeue());
         }
 
-        private void EnqueueMessage(string command, ISerializable payload = null)
-        {
-            EnqueueMessage(Message.Create(command, payload));
-        }
+        private void EnqueueMessage(string command, ISerializable payload = null) =>
+            this.EnqueueMessage(Message.Create(command, payload));
 
         private void EnqueueMessage(Message message)
         {
-            bool is_single = false;
+            var isSingle = false;
             switch (message.Command)
             {
                 case "addr":
@@ -63,10 +141,11 @@ namespace Neo.Network.P2P
                 case "getblocks":
                 case "getheaders":
                 case "mempool":
-                    is_single = true;
+                    isSingle = true;
                     break;
             }
-            Queue<Message> message_queue;
+
+            Queue<Message> messagesQueue;
             switch (message.Command)
             {
                 case "alert":
@@ -76,88 +155,72 @@ namespace Neo.Network.P2P
                 case "filterload":
                 case "getaddr":
                 case "mempool":
-                    message_queue = message_queue_high;
+                    messagesQueue = this.messageQueueHigh;
                     break;
                 default:
-                    message_queue = message_queue_low;
+                    messagesQueue = this.messageQueueLow;
                     break;
             }
-            if (!is_single || message_queue.All(p => p.Command != message.Command))
-                message_queue.Enqueue(message);
-            CheckMessageQueue();
-        }
 
-        protected override void OnAck()
-        {
-            ack = true;
-            CheckMessageQueue();
-        }
-
-        protected override void OnData(ByteString data)
-        {
-            msg_buffer = msg_buffer.Concat(data);
-            for (Message message = TryParseMessage(); message != null; message = TryParseMessage())
-                protocol.Tell(message);
-        }
-
-        protected override void OnReceive(object message)
-        {
-            base.OnReceive(message);
-            switch (message)
+            if (!isSingle || messagesQueue.All(p => p.Command != message.Command))
             {
-                case Message msg:
-                    EnqueueMessage(msg);
-                    break;
-                case IInventory inventory:
-                    OnSend(inventory);
-                    break;
-                case Relay relay:
-                    OnRelay(relay.Inventory);
-                    break;
-                case ProtocolHandler.SetVersion setVersion:
-                    OnSetVersion(setVersion.Version);
-                    break;
-                case ProtocolHandler.SetVerack _:
-                    OnSetVerack();
-                    break;
-                case ProtocolHandler.SetFilter setFilter:
-                    OnSetFilter(setFilter.Filter);
-                    break;
+                messagesQueue.Enqueue(message);
             }
+
+            this.CheckMessageQueue();
         }
 
         private void OnRelay(IInventory inventory)
         {
-            if (Version?.Relay != true) return;
+            if (this.Version?.Relay != true)
+            {
+                return;
+            }
+
             if (inventory.InventoryType == InventoryType.TX)
             {
-                if (bloom_filter != null && !bloom_filter.Test((Transaction)inventory))
+                if (this.bloomFilter != null && !this.bloomFilter.Test((Transaction)inventory))
+                {
                     return;
+                }
             }
-            EnqueueMessage("inv", InvPayload.Create(inventory.InventoryType, inventory.Hash));
+
+            var invPayload = InvPayload.Create(inventory.InventoryType, inventory.Hash);
+            this.EnqueueMessage("inv", invPayload);
         }
 
         private void OnSend(IInventory inventory)
         {
-            if (Version?.Relay != true) return;
+            if (this.Version?.Relay != true)
+            {
+                return;
+            }
+
             if (inventory.InventoryType == InventoryType.TX)
             {
-                if (bloom_filter != null && !bloom_filter.Test((Transaction)inventory))
+                if (this.bloomFilter != null && !this.bloomFilter.Test((Transaction)inventory))
+                {
                     return;
+                }
             }
-            EnqueueMessage(inventory.InventoryType.ToString().ToLower(), inventory);
+
+            var message = inventory
+                .InventoryType
+                .ToString()
+                .ToLower();
+
+            this.EnqueueMessage(message, inventory);
         }
 
-        private void OnSetFilter(BloomFilter filter)
-        {
-            bloom_filter = filter;
-        }
+        private void OnSetFilter(BloomFilter filter) => this.bloomFilter = filter;
 
         private void OnSetVerack()
         {
-            verack = true;
-            system.TaskManager.Tell(new TaskManager.Register { Version = Version });
-            CheckMessageQueue();
+            this.verack = true;
+
+            var registerMessage = new TaskManager.Register(this.Version);
+            this.system.TaskManagerActorRef.Tell(registerMessage);
+            this.CheckMessageQueue();
         }
 
         private void OnSetVersion(VersionPayload version)
@@ -165,79 +228,90 @@ namespace Neo.Network.P2P
             this.Version = version;
             if (version.Nonce == LocalNode.Nonce)
             {
-                Disconnect(true);
+                this.Disconnect(true);
                 return;
             }
-            if (LocalNode.Singleton.RemoteNodes.Values.Where(p => p != this).Any(p => p.Remote.Address.Equals(Remote.Address) && p.Version?.Nonce == version.Nonce))
+
+            var alreadyConnected = LocalNode
+                .Instance
+                .RemoteNodes
+                .Values
+                .Where(p => p != this)
+                .Any(p => p.Remote.Address.Equals(this.Remote.Address) && p.Version?.Nonce == version.Nonce);
+
+            if (alreadyConnected)
             {
-                Disconnect(true);
+                this.Disconnect(true);
                 return;
             }
-            SendMessage(Message.Create("verack"));
-        }
 
-        protected override void PostStop()
-        {
-            LocalNode.Singleton.RemoteNodes.TryRemove(Self, out _);
-            base.PostStop();
-        }
-
-        internal static Props Props(NeoSystem system, object connection, IPEndPoint remote, IPEndPoint local)
-        {
-            return Akka.Actor.Props.Create(() => new RemoteNode(system, connection, remote, local)).WithMailbox("remote-node-mailbox");
+            var verackMessage = Message.Create("verack");
+            this.SendMessage(verackMessage);
         }
 
         private void SendMessage(Message message)
         {
-            ack = false;
-            SendData(ByteString.FromBytes(message.ToArray()));
-        }
+            this.ack = false;
 
-        protected override SupervisorStrategy SupervisorStrategy()
-        {
-            return new OneForOneStrategy(ex =>
-            {
-                Disconnect(true);
-                return Directive.Stop;
-            }, loggingEnabled: false);
-        }
+            var data = ByteString.FromBytes(message.ToArray());
+            this.SendData(data);
+        }       
 
         private Message TryParseMessage()
         {
-            if (msg_buffer.Count < sizeof(uint)) return null;
-            uint magic = msg_buffer.Slice(0, sizeof(uint)).ToArray().ToUInt32(0);
+            if (this.messageBuffer.Count < sizeof(uint))
+            {
+                return null;
+            }
+
+            var magic = this.messageBuffer
+                .Slice(0, sizeof(uint))
+                .ToArray()
+                .ToUInt32(0);
+
             if (magic != Message.Magic)
+            {
                 throw new FormatException();
-            if (msg_buffer.Count < Message.HeaderSize) return null;
-            int length = msg_buffer.Slice(16, sizeof(int)).ToArray().ToInt32(0);
+            }
+
+            if (this.messageBuffer.Count < Message.HeaderSize)
+            {
+                return null;
+            }
+
+            var length = this.messageBuffer
+                .Slice(16, sizeof(int))
+                .ToArray()
+                .ToInt32(0);
+
             if (length > Message.PayloadMaxSize)
+            {
                 throw new FormatException();
+            }
+
             length += Message.HeaderSize;
-            if (msg_buffer.Count < length) return null;
-            Message message = msg_buffer.Slice(0, length).ToArray().AsSerializable<Message>();
-            msg_buffer = msg_buffer.Slice(length).Compact();
+            if (this.messageBuffer.Count < length)
+            {
+                return null;
+            }
+
+            var message = this.messageBuffer
+                .Slice(0, length)
+                .ToArray()
+                .AsSerializable<Message>();
+
+            this.messageBuffer = this.messageBuffer.Slice(length).Compact();
             return message;
         }
-    }
 
-    internal class RemoteNodeMailbox : PriorityMailbox
-    {
-        public RemoteNodeMailbox(Akka.Actor.Settings settings, Config config)
-            : base(settings, config)
+        internal class Relay
         {
-        }
-
-        protected override bool IsHighPriority(object message)
-        {
-            switch (message)
+            public Relay(IInventory inventory)
             {
-                case Tcp.ConnectionClosed _:
-                case Connection.Timer _:
-                case Connection.Ack _:
-                    return true;
-                default:
-                    return false;
+                this.Inventory = inventory;
             }
+
+            public IInventory Inventory { get; private set; }
         }
     }
 }

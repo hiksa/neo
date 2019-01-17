@@ -1,8 +1,9 @@
-﻿using Neo.Cryptography;
-using Neo.SmartContract;
-using System;
+﻿using System;
 using System.Linq;
 using System.Text;
+using Neo.Cryptography;
+using Neo.Extensions;
+using Neo.SmartContract;
 
 namespace Neo.Wallets
 {
@@ -11,14 +12,15 @@ namespace Neo.Wallets
         public readonly byte[] PrivateKey;
         public readonly Cryptography.ECC.ECPoint PublicKey;
 
-        public UInt160 PublicKeyHash => PublicKey.EncodePoint(true).ToScriptHash();
-
         public KeyPair(byte[] privateKey)
         {
             if (privateKey.Length != 32 && privateKey.Length != 96 && privateKey.Length != 104)
+            {
                 throw new ArgumentException();
+            }
+
             this.PrivateKey = new byte[32];
-            Buffer.BlockCopy(privateKey, privateKey.Length - 32, PrivateKey, 0, 32);
+            Buffer.BlockCopy(privateKey, privateKey.Length - 32, this.PrivateKey, 0, 32);
             if (privateKey.Length == 32)
             {
                 this.PublicKey = Cryptography.ECC.ECCurve.Secp256r1.G * privateKey;
@@ -29,60 +31,72 @@ namespace Neo.Wallets
             }
         }
 
+        public UInt160 PublicKeyHash => this.PublicKey.EncodePoint(true).ToScriptHash();
+
         public bool Equals(KeyPair other)
         {
-            if (ReferenceEquals(this, other)) return true;
-            if (other is null) return false;
-            return PublicKey.Equals(other.PublicKey);
+            if (object.ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            if (other is null)
+            {
+                return false;
+            }
+
+            return this.PublicKey.Equals(other.PublicKey);
         }
 
-        public override bool Equals(object obj)
-        {
-            return Equals(obj as KeyPair);
-        }
+        public override bool Equals(object obj) => this.Equals(obj as KeyPair);
 
         public string Export()
         {
-            byte[] data = new byte[34];
+            var data = new byte[34];
             data[0] = 0x80;
-            Buffer.BlockCopy(PrivateKey, 0, data, 1, 32);
+
+            Buffer.BlockCopy(this.PrivateKey, 0, data, 1, 32);
             data[33] = 0x01;
-            string wif = data.Base58CheckEncode();
+
+            var wif = data.Base58CheckEncode();
             Array.Clear(data, 0, data.Length);
+
             return wif;
         }
 
         public string Export(string passphrase, int N = 16384, int r = 8, int p = 8)
         {
-            UInt160 script_hash = Contract.CreateSignatureRedeemScript(PublicKey).ToScriptHash();
-            string address = script_hash.ToAddress();
-            byte[] addresshash = Encoding.ASCII.GetBytes(address).Sha256().Sha256().Take(4).ToArray();
-            byte[] derivedkey = SCrypt.DeriveKey(Encoding.UTF8.GetBytes(passphrase), addresshash, N, r, p, 64);
-            byte[] derivedhalf1 = derivedkey.Take(32).ToArray();
-            byte[] derivedhalf2 = derivedkey.Skip(32).ToArray();
-            byte[] encryptedkey = XOR(PrivateKey, derivedhalf1).AES256Encrypt(derivedhalf2);
-            byte[] buffer = new byte[39];
+            var scriptHash = Contract.CreateSignatureRedeemScript(this.PublicKey).ToScriptHash();
+            var address = scriptHash.ToAddress();
+
+            var addressHash = Encoding.ASCII.GetBytes(address).Sha256().Sha256().Take(4).ToArray();
+            var derivedKey = SCrypt.DeriveKey(Encoding.UTF8.GetBytes(passphrase), addressHash, N, r, p, 64);
+            var derivedKeyFirstHalf = derivedKey.Take(32).ToArray();
+            var derivedKeySecondHalf = derivedKey.Skip(32).ToArray();
+            var encryptedkey = KeyPair.XOR(this.PrivateKey, derivedKeyFirstHalf).AES256Encrypt(derivedKeySecondHalf);
+
+            var buffer = new byte[39];
             buffer[0] = 0x01;
             buffer[1] = 0x42;
             buffer[2] = 0xe0;
-            Buffer.BlockCopy(addresshash, 0, buffer, 3, addresshash.Length);
+
+            Buffer.BlockCopy(addressHash, 0, buffer, 3, addressHash.Length);
             Buffer.BlockCopy(encryptedkey, 0, buffer, 7, encryptedkey.Length);
+
             return buffer.Base58CheckEncode();
         }
 
-        public override int GetHashCode()
-        {
-            return PublicKey.GetHashCode();
-        }
+        public override int GetHashCode() => this.PublicKey.GetHashCode();
 
-        public override string ToString()
-        {
-            return PublicKey.ToString();
-        }
+        public override string ToString() => this.PublicKey.ToString();
 
         private static byte[] XOR(byte[] x, byte[] y)
         {
-            if (x.Length != y.Length) throw new ArgumentException();
+            if (x.Length != y.Length)
+            {
+                throw new ArgumentException();
+            }
+
             return x.Zip(y, (a, b) => (byte)(a ^ b)).ToArray();
         }
     }

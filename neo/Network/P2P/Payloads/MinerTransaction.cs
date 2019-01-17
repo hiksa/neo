@@ -1,49 +1,55 @@
-﻿using Neo.IO.Json;
-using Neo.Ledger;
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
+using Neo.IO.Json;
+using Neo.Ledger;
 
 namespace Neo.Network.P2P.Payloads
 {
     public class MinerTransaction : Transaction
     {
-        public uint Nonce;
-
-        public override Fixed8 NetworkFee => Fixed8.Zero;
-
-        public override int Size => base.Size + sizeof(uint);
-
         public MinerTransaction()
             : base(TransactionType.MinerTransaction)
         {
         }
 
+        public uint Nonce { get; set; }
+
+        public override Fixed8 NetworkFee => Fixed8.Zero;
+
+        public override int Size => base.Size + sizeof(uint);
+
+        public override JObject ToJson()
+        {
+            var json = base.ToJson();
+            json["nonce"] = this.Nonce;
+            return json;
+        }
+
         protected override void DeserializeExclusiveData(BinaryReader reader)
         {
-            if (Version != 0) throw new FormatException();
+            if (this.Version != 0)
+            {
+                throw new FormatException();
+            }
+
             this.Nonce = reader.ReadUInt32();
         }
 
         protected override void OnDeserialized()
         {
             base.OnDeserialized();
-            if (Inputs.Length != 0)
+            if (this.Inputs.Length != 0)
+            {
                 throw new FormatException();
-            if (Outputs.Any(p => p.AssetId != Blockchain.UtilityToken.Hash))
+            }
+
+            if (this.Outputs.Any(p => p.AssetId != Blockchain.UtilityToken.Hash))
+            {
                 throw new FormatException();
+            }
         }
 
-        protected override void SerializeExclusiveData(BinaryWriter writer)
-        {
-            writer.Write(Nonce);
-        }
-
-        public override JObject ToJson()
-        {
-            JObject json = base.ToJson();
-            json["nonce"] = Nonce;
-            return json;
-        }
+        protected override void SerializeExclusiveData(BinaryWriter writer) => writer.Write(this.Nonce);
     }
 }

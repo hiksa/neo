@@ -11,9 +11,6 @@ namespace Neo.Wallets.NEP6
             this.wallet = wallet;
         }
 
-        public void Dispose()
-        {
-            wallet.Lock();
-        }
+        public void Dispose() => this.wallet.Lock();        
     }
 }

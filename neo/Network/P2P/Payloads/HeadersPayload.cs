@@ -1,7 +1,8 @@
-﻿using Neo.IO;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Neo.Extensions;
+using Neo.IO;
 
 namespace Neo.Network.P2P.Payloads
 {
@@ -9,9 +10,9 @@ namespace Neo.Network.P2P.Payloads
     {
         public const int MaxHeadersCount = 2000;
 
-        public Header[] Headers;
+        public Header[] Headers { get; private set; }
 
-        public int Size => Headers.GetVarSize();
+        public int Size => this.Headers.GetVarSize();
 
         public static HeadersPayload Create(IEnumerable<Header> headers)
         {
@@ -21,14 +22,9 @@ namespace Neo.Network.P2P.Payloads
             };
         }
 
-        void ISerializable.Deserialize(BinaryReader reader)
-        {
-            Headers = reader.ReadSerializableArray<Header>(MaxHeadersCount);
-        }
+        void ISerializable.Deserialize(BinaryReader reader) =>
+            this.Headers = reader.ReadSerializableArray<Header>(MaxHeadersCount);
 
-        void ISerializable.Serialize(BinaryWriter writer)
-        {
-            writer.Write(Headers);
-        }
+        void ISerializable.Serialize(BinaryWriter writer) => writer.Write(this.Headers);
     }
 }

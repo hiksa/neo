@@ -6,12 +6,13 @@ namespace Neo
     {
         private static readonly TimeProvider Default = new TimeProvider();
 
-        public static TimeProvider Current { get; internal set; } = Default;
+        public static TimeProvider Current { get; internal set; } = TimeProvider.Default;
+
         public virtual DateTime UtcNow => DateTime.UtcNow;
 
         internal static void ResetToDefault()
         {
-            Current = Default;
+            TimeProvider.Current = TimeProvider.Default;
         }
     }
 }

@@ -1,118 +1,151 @@
-﻿using Neo.Cryptography.ECC;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Neo.Cryptography.ECC;
+using Neo.Extensions;
 using Neo.IO;
 using Neo.IO.Json;
 using Neo.Ledger;
 using Neo.Persistence;
 using Neo.SmartContract;
 using Neo.Wallets;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 
 namespace Neo.Network.P2P.Payloads
 {
     [Obsolete]
     public class RegisterTransaction : Transaction
     {
-        public AssetType AssetType;
-        public string Name;
-        public Fixed8 Amount;
-        public byte Precision;
-        public ECPoint Owner;
-        public UInt160 Admin;
-
-        private UInt160 _script_hash = null;
-        internal UInt160 OwnerScriptHash
-        {
-            get
-            {
-                if (_script_hash == null)
-                {
-                    _script_hash = Contract.CreateSignatureRedeemScript(Owner).ToScriptHash();
-                }
-                return _script_hash;
-            }
-        }
-
-        public override int Size => base.Size + sizeof(AssetType) + Name.GetVarSize() + Amount.Size + sizeof(byte) + Owner.Size + Admin.Size;
-
-        public override Fixed8 SystemFee
-        {
-            get
-            {
-                if (AssetType == AssetType.GoverningToken || AssetType == AssetType.UtilityToken)
-                    return Fixed8.Zero;
-                return base.SystemFee;
-            }
-        }
-
+        private UInt160 scriptHash = null;
+        
         public RegisterTransaction()
             : base(TransactionType.RegisterTransaction)
         {
         }
 
-        protected override void DeserializeExclusiveData(BinaryReader reader)
+        public AssetType AssetType { get; set; }
+
+        public string Name { get; set; }
+
+        public Fixed8 Amount { get; set; }
+
+        public byte Precision { get; set; }
+
+        public ECPoint Owner { get; set; }
+
+        public UInt160 Admin { get; set; }
+
+        public override int Size => 
+            base.Size + sizeof(AssetType) + this.Name.GetVarSize() 
+            + this.Amount.Size + sizeof(byte) + this.Owner.Size + this.Admin.Size;
+
+        public override Fixed8 SystemFee
         {
-            if (Version != 0) throw new FormatException();
-            AssetType = (AssetType)reader.ReadByte();
-            Name = reader.ReadVarString(1024);
-            Amount = reader.ReadSerializable<Fixed8>();
-            Precision = reader.ReadByte();
-            Owner = ECPoint.DeserializeFrom(reader, ECCurve.Secp256r1);
-            if (Owner.IsInfinity && AssetType != AssetType.GoverningToken && AssetType != AssetType.UtilityToken)
-                throw new FormatException();
-            Admin = reader.ReadSerializable<UInt160>();
+            get
+            {
+                if (this.AssetType == AssetType.GoverningToken || this.AssetType == AssetType.UtilityToken)
+                {
+                    return Fixed8.Zero;
+                }
+
+                return base.SystemFee;
+            }
+        }
+
+        internal UInt160 OwnerScriptHash
+        {
+            get
+            {
+                if (this.scriptHash == null)
+                {
+                    this.scriptHash = Contract.CreateSignatureRedeemScript(this.Owner).ToScriptHash();
+                }
+
+                return this.scriptHash;
+            }
         }
 
         public override UInt160[] GetScriptHashesForVerifying(Snapshot snapshot)
         {
-            UInt160 owner = Contract.CreateSignatureRedeemScript(Owner).ToScriptHash();
-            return base.GetScriptHashesForVerifying(snapshot).Union(new[] { owner }).OrderBy(p => p).ToArray();
-        }
-
-        protected override void OnDeserialized()
-        {
-            base.OnDeserialized();
-            if (AssetType == AssetType.GoverningToken && !Hash.Equals(Blockchain.GoverningToken.Hash))
-                throw new FormatException();
-            if (AssetType == AssetType.UtilityToken && !Hash.Equals(Blockchain.UtilityToken.Hash))
-                throw new FormatException();
-        }
-
-        protected override void SerializeExclusiveData(BinaryWriter writer)
-        {
-            writer.Write((byte)AssetType);
-            writer.WriteVarString(Name);
-            writer.Write(Amount);
-            writer.Write(Precision);
-            writer.Write(Owner);
-            writer.Write(Admin);
+            var owner = Contract.CreateSignatureRedeemScript(this.Owner).ToScriptHash();
+            return base.GetScriptHashesForVerifying(snapshot)
+                .Union(new[] { owner })
+                .OrderBy(p => p)
+                .ToArray();
         }
 
         public override JObject ToJson()
         {
-            JObject json = base.ToJson();
+            var json = base.ToJson();
             json["asset"] = new JObject();
-            json["asset"]["type"] = AssetType;
+            json["asset"]["type"] = this.AssetType;
             try
             {
-                json["asset"]["name"] = Name == "" ? null : JObject.Parse(Name);
+                json["asset"]["name"] = this.Name == string.Empty ? null : JObject.Parse(this.Name);
             }
             catch (FormatException)
             {
-                json["asset"]["name"] = Name;
+                json["asset"]["name"] = this.Name;
             }
-            json["asset"]["amount"] = Amount.ToString();
-            json["asset"]["precision"] = Precision;
-            json["asset"]["owner"] = Owner.ToString();
-            json["asset"]["admin"] = Admin.ToAddress();
+
+            json["asset"]["amount"] = this.Amount.ToString();
+            json["asset"]["precision"] = this.Precision;
+            json["asset"]["owner"] = this.Owner.ToString();
+            json["asset"]["admin"] = this.Admin.ToAddress();
             return json;
         }
 
         public override bool Verify(Snapshot snapshot, IEnumerable<Transaction> mempool)
         {
             return false;
+        }
+        
+        protected override void DeserializeExclusiveData(BinaryReader reader)
+        {
+            if (this.Version != 0)
+            {
+                throw new FormatException();
+            }
+
+            this.AssetType = (AssetType)reader.ReadByte();
+            this.Name = reader.ReadVarString(1024);
+            this.Amount = reader.ReadSerializable<Fixed8>();
+            this.Precision = reader.ReadByte();
+            this.Owner = ECPoint.DeserializeFrom(reader, ECCurve.Secp256r1);
+
+            if (
+                this.Owner.IsInfinity 
+                && this.AssetType != AssetType.GoverningToken 
+                && this.AssetType != AssetType.UtilityToken)
+            {
+                throw new FormatException();
+            }
+
+            this.Admin = reader.ReadSerializable<UInt160>();
+        }
+
+        protected override void OnDeserialized()
+        {
+            base.OnDeserialized();
+            if (this.AssetType == AssetType.GoverningToken && !this.Hash.Equals(Blockchain.GoverningToken.Hash))
+            {
+                throw new FormatException();
+            }
+
+            if (this.AssetType == AssetType.UtilityToken && !this.Hash.Equals(Blockchain.UtilityToken.Hash))
+            {
+                throw new FormatException();
+            }
+        }
+
+        protected override void SerializeExclusiveData(BinaryWriter writer)
+        {
+            writer.Write((byte)this.AssetType);
+            writer.WriteVarString(this.Name);
+            writer.Write(this.Amount);
+            writer.Write(this.Precision);
+            writer.Write(this.Owner);
+            writer.Write(this.Admin);
         }
     }
 }

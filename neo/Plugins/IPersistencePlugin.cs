@@ -6,6 +6,6 @@ namespace Neo.Plugins
 {
     public interface IPersistencePlugin
     {
-        void OnPersist(Snapshot snapshot, IReadOnlyList<ApplicationExecuted> applicationExecutedList);
+        void OnPersist(Snapshot snapshot, IReadOnlyList<ApplicationExecuted> allResults);
     }
 }

@@ -2,6 +2,7 @@
 using Neo.IO.Caching;
 using Neo.IO.Wrappers;
 using Neo.Ledger;
+using Neo.Ledger.States;
 
 namespace Neo.Persistence
 {

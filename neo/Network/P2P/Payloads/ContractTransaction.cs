@@ -12,7 +12,10 @@ namespace Neo.Network.P2P.Payloads
 
         protected override void DeserializeExclusiveData(BinaryReader reader)
         {
-            if (Version != 0) throw new FormatException();
+            if (this.Version != 0)
+            {
+                throw new FormatException();
+            }
         }
     }
 }

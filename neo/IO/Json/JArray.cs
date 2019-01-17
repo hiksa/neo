@@ -19,115 +19,94 @@ namespace Neo.IO.Json
             this.items.AddRange(items);
         }
 
+        public int Count => this.items.Count;
+
+        public bool IsReadOnly => false;
+
         public JObject this[int index]
         {
             get
             {
-                return items[index];
+                return this.items[index];
             }
+
             set
             {
-                items[index] = value;
+                this.items[index] = value;
             }
         }
 
-        public int Count
+        public void Add(JObject item) => this.items.Add(item);
+        
+        public void Clear() => this.items.Clear();
+
+        public bool Contains(JObject item) => this.items.Contains(item);
+        
+        public void CopyTo(JObject[] array, int arrayIndex) => this.items.CopyTo(array, arrayIndex);        
+
+        public IEnumerator<JObject> GetEnumerator() => this.items.GetEnumerator();
+        
+        IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
+        
+        public int IndexOf(JObject item) => this.items.IndexOf(item);
+        
+        public void Insert(int index, JObject item) => this.items.Insert(index, item);
+        
+        internal new static JArray Parse(TextReader reader, int maxNestLevel)
         {
-            get
+            if (maxNestLevel < 0)
             {
-                return items.Count;
+                throw new FormatException();
             }
-        }
 
-        public bool IsReadOnly
-        {
-            get
+            JObject.SkipSpace(reader);
+            if (reader.Read() != '[')
             {
-                return false;
+                throw new FormatException();
             }
-        }
 
-        public void Add(JObject item)
-        {
-            items.Add(item);
-        }
-
-        public void Clear()
-        {
-            items.Clear();
-        }
-
-        public bool Contains(JObject item)
-        {
-            return items.Contains(item);
-        }
-
-        public void CopyTo(JObject[] array, int arrayIndex)
-        {
-            items.CopyTo(array, arrayIndex);
-        }
-
-        public IEnumerator<JObject> GetEnumerator()
-        {
-            return items.GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-
-        public int IndexOf(JObject item)
-        {
-            return items.IndexOf(item);
-        }
-
-        public void Insert(int index, JObject item)
-        {
-            items.Insert(index, item);
-        }
-
-        internal new static JArray Parse(TextReader reader, int max_nest)
-        {
-            if (max_nest < 0) throw new FormatException();
-            SkipSpace(reader);
-            if (reader.Read() != '[') throw new FormatException();
-            SkipSpace(reader);
-            JArray array = new JArray();
+            JObject.SkipSpace(reader);
+            var array = new JArray();
             while (reader.Peek() != ']')
             {
-                if (reader.Peek() == ',') reader.Read();
-                JObject obj = JObject.Parse(reader, max_nest - 1);
+                if (reader.Peek() == ',')
+                {
+                    reader.Read();
+                }
+
+                var obj = JObject.Parse(reader, maxNestLevel - 1);
                 array.items.Add(obj);
-                SkipSpace(reader);
+
+                JObject.SkipSpace(reader);
             }
+
             reader.Read();
             return array;
         }
 
-        public bool Remove(JObject item)
-        {
-            return items.Remove(item);
-        }
+        public bool Remove(JObject item) => this.items.Remove(item);
 
-        public void RemoveAt(int index)
-        {
-            items.RemoveAt(index);
-        }
+        public void RemoveAt(int index) => this.items.RemoveAt(index);
 
         public override string ToString()
         {
-            StringBuilder sb = new StringBuilder();
+            var sb = new StringBuilder();
             sb.Append('[');
-            foreach (JObject item in items)
+            foreach (var item in this.items)
             {
                 if (item == null)
+                {
                     sb.Append("null");
+                }
                 else
+                {
                     sb.Append(item);
+                }
+
                 sb.Append(',');
             }
-            if (items.Count == 0)
+
+            if (this.items.Count == 0)
             {
                 sb.Append(']');
             }
@@ -135,6 +114,7 @@ namespace Neo.IO.Json
             {
                 sb[sb.Length - 1] = ']';
             }
+
             return sb.ToString();
         }
     }

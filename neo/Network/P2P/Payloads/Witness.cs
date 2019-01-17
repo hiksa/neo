@@ -1,48 +1,51 @@
-﻿using Neo.IO;
+﻿using System.IO;
+using Neo.Extensions;
+using Neo.IO;
 using Neo.IO.Json;
-using Neo.SmartContract;
 using Neo.VM;
-using System.IO;
 
 namespace Neo.Network.P2P.Payloads
 {
     public class Witness : ISerializable
     {
-        public byte[] InvocationScript;
-        public byte[] VerificationScript;
+        private UInt160 scriptHash;
 
-        private UInt160 _scriptHash;
+        public byte[] InvocationScript { get; set; }
+
+        public byte[] VerificationScript { get; set; }
+
         public virtual UInt160 ScriptHash
         {
             get
             {
-                if (_scriptHash == null)
+                if (this.scriptHash == null)
                 {
-                    _scriptHash = VerificationScript.ToScriptHash();
+                    this.scriptHash = this.VerificationScript.ToScriptHash();
                 }
-                return _scriptHash;
+
+                return this.scriptHash;
             }
         }
 
-        public int Size => InvocationScript.GetVarSize() + VerificationScript.GetVarSize();
+        public int Size => this.InvocationScript.GetVarSize() + this.VerificationScript.GetVarSize();
 
         void ISerializable.Deserialize(BinaryReader reader)
         {
-            InvocationScript = reader.ReadVarBytes(65536);
-            VerificationScript = reader.ReadVarBytes(65536);
+            this.InvocationScript = reader.ReadVarBytes(65536);
+            this.VerificationScript = reader.ReadVarBytes(65536);
         }
 
         void ISerializable.Serialize(BinaryWriter writer)
         {
-            writer.WriteVarBytes(InvocationScript);
-            writer.WriteVarBytes(VerificationScript);
+            writer.WriteVarBytes(this.InvocationScript);
+            writer.WriteVarBytes(this.VerificationScript);
         }
 
         public JObject ToJson()
         {
-            JObject json = new JObject();
-            json["invocation"] = InvocationScript.ToHexString();
-            json["verification"] = VerificationScript.ToHexString();
+            var json = new JObject();
+            json["invocation"] = this.InvocationScript.ToHexString();
+            json["verification"] = this.VerificationScript.ToHexString();
             return json;
         }
     }

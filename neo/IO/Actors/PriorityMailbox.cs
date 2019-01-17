@@ -13,12 +13,11 @@ namespace Neo.IO.Actors
         {
         }
 
-        public override IMessageQueue Create(IActorRef owner, ActorSystem system)
-        {
-            return new PriorityMessageQueue(ShallDrop, IsHighPriority);
-        }
+        public override IMessageQueue Create(IActorRef owner, ActorSystem system) =>
+            new PriorityMessageQueue(this.ShallDrop, this.IsHighPriority);
 
         protected virtual bool IsHighPriority(object message) => false;
+
         protected virtual bool ShallDrop(object message, IEnumerable queue) => false;
     }
 }

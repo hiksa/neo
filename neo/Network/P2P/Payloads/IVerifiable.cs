@@ -1,7 +1,8 @@
-﻿using Neo.IO;
+﻿using System.IO;
+
+using Neo.IO;
 using Neo.Persistence;
 using Neo.VM;
-using System.IO;
 
 namespace Neo.Network.P2P.Payloads
 {

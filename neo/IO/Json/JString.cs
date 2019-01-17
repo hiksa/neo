@@ -9,16 +9,16 @@ namespace Neo.IO.Json
 {
     public class JString : JObject
     {
-        public string Value { get; private set; }
-
         public JString(string value)
         {
             this.Value = value ?? throw new ArgumentNullException();
         }
 
+        public string Value { get; private set; }
+
         public override bool AsBoolean()
         {
-            switch (Value.ToLower())
+            switch (this.Value.ToLower())
             {
                 case "0":
                 case "f":
@@ -36,7 +36,7 @@ namespace Neo.IO.Json
         {
             try
             {
-                return (T)Enum.Parse(typeof(T), Value, ignoreCase);
+                return (T)Enum.Parse(typeof(T), this.Value, ignoreCase);
             }
             catch
             {
@@ -48,7 +48,7 @@ namespace Neo.IO.Json
         {
             try
             {
-                return double.Parse(Value);
+                return double.Parse(this.Value);
             }
             catch
             {
@@ -56,61 +56,71 @@ namespace Neo.IO.Json
             }
         }
 
-        public override string AsString()
-        {
-            return Value;
-        }
+        public override string AsString() => this.Value;
 
         public override bool CanConvertTo(Type type)
         {
-            if (type == typeof(bool))
+            if (
+                type.GetTypeInfo().IsEnum && Enum.IsDefined(type, this.Value)
+                || type == typeof(bool)
+                || type == typeof(double)
+                || type == typeof(string))
+            {
                 return true;
-            if (type.GetTypeInfo().IsEnum && Enum.IsDefined(type, Value))
-                return true;
-            if (type == typeof(double))
-                return true;
-            if (type == typeof(string))
-                return true;
+            }
+
             return false;
         }
 
         internal static JString Parse(TextReader reader)
         {
-            SkipSpace(reader);
-            char[] buffer = new char[4];
-            char firstChar = (char)reader.Read();
-            if (firstChar != '\"' && firstChar != '\'') throw new FormatException();
-            StringBuilder sb = new StringBuilder();
+            JObject.SkipSpace(reader);
+
+            var buffer = new char[4];
+            var firstChar = (char)reader.Read();
+            if (firstChar != '\"' && firstChar != '\'')
+            {
+                throw new FormatException();
+            }
+
+            var sb = new StringBuilder();
             while (true)
             {
-                char c = (char)reader.Read();
-                if (c == 65535) throw new FormatException();
-                if (c == firstChar) break;
-                if (c == '\\')
+                var currentChar = (char)reader.Read();
+                if (currentChar == 65535)
                 {
-                    c = (char)reader.Read();
-                    switch (c)
+                    throw new FormatException();
+                }
+
+                if (currentChar == firstChar)
+                {
+                    break;
+                }
+
+                if (currentChar == '\\')
+                {
+                    currentChar = (char)reader.Read();
+                    switch (currentChar)
                     {
                         case 'u':
                             reader.Read(buffer, 0, 4);
-                            c = (char)short.Parse(new string(buffer), NumberStyles.HexNumber);
+                            currentChar = (char)short.Parse(new string(buffer), NumberStyles.HexNumber);
                             break;
                         case 'r':
-                            c = '\r';
+                            currentChar = '\r';
                             break;
                         case 'n':
-                            c = '\n';
+                            currentChar = '\n';
                             break;
                     }
                 }
-                sb.Append(c);
+
+                sb.Append(currentChar);
             }
+
             return new JString(sb.ToString());
         }
 
-        public override string ToString()
-        {
-            return $"\"{JavaScriptEncoder.Default.Encode(Value)}\"";
-        }
+        public override string ToString() => $"\"{JavaScriptEncoder.Default.Encode(this.Value)}\"";        
     }
 }

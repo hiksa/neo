@@ -251,8 +251,9 @@ namespace Neo.IO.Data.LevelDB
         {
             if (error != IntPtr.Zero)
             {
-                string message = Marshal.PtrToStringAnsi(error);
+                var message = Marshal.PtrToStringAnsi(error);
                 Native.leveldb_free(error);
+
                 throw new LevelDBException(message);
             }
         }

@@ -40,7 +40,7 @@ namespace Neo.UnitTests
             mockConsensusContext.Object.NextConsensus = UInt160.Zero;
             mockConsensusContext.Setup(mr => mr.GetPrimaryIndex(It.IsAny<byte>())).Returns(2);
             mockConsensusContext.SetupProperty(mr => mr.State);  // allows get and set to update mock state on Initialize method
-            mockConsensusContext.Object.State = ConsensusState.Initial;
+            mockConsensusContext.Object.State = ConsensusStates.Initial;
 
             int timeIndex = 0;
             var timeValues = new[] {
@@ -109,7 +109,7 @@ namespace Neo.UnitTests
             ConsensusPayload prepPayload = new ConsensusPayload
             {
                 Version = 0,
-                PrevHash = mockConsensusContext.Object.PrevHash,
+                PrevHash = mockConsensusContext.Object.PreviousBlockHash,
                 BlockIndex = mockConsensusContext.Object.BlockIndex,
                 ValidatorIndex = (ushort)mockConsensusContext.Object.MyIndex,
                 Timestamp = mockConsensusContext.Object.Timestamp,
@@ -128,19 +128,18 @@ namespace Neo.UnitTests
 
             Console.WriteLine("will trigger OnPersistCompleted!");
 
-            actorConsensus.Tell(new Blockchain.PersistCompleted
+            var block = new Block
             {
-                Block = new Block
-                {
-                    Version = header.Version,
-                    PrevHash = header.PrevHash,
-                    MerkleRoot = header.MerkleRoot,
-                    Timestamp = header.Timestamp,
-                    Index = header.Index,
-                    ConsensusData = header.ConsensusData,
-                    NextConsensus = header.NextConsensus
-                }
-            });
+                Version = header.Version,
+                PrevHash = header.PrevHash,
+                MerkleRoot = header.MerkleRoot,
+                Timestamp = header.Timestamp,
+                Index = header.Index,
+                ConsensusData = header.ConsensusData,
+                NextConsensus = header.NextConsensus
+            };
+
+            actorConsensus.Tell(new Blockchain.PersistCompleted(block));
 
             //Console.WriteLine("will start consensus!");
             //actorConsensus.Tell(new ConsensusService.Start());

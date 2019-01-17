@@ -7,6 +7,7 @@ namespace Neo.IO
         int Size { get; }
 
         void Serialize(BinaryWriter writer);
+
         void Deserialize(BinaryReader reader);
     }
 }

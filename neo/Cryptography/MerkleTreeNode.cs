@@ -2,13 +2,16 @@
 {
     internal class MerkleTreeNode
     {
-        public UInt256 Hash;
-        public MerkleTreeNode Parent;
-        public MerkleTreeNode LeftChild;
-        public MerkleTreeNode RightChild;
+        public bool IsLeaf => this.LeftChild == null && this.RightChild == null;
 
-        public bool IsLeaf => LeftChild == null && RightChild == null;
+        public bool IsRoot => this.Parent == null;
 
-        public bool IsRoot => Parent == null;
+        public UInt256 Hash { get; set; }
+
+        public MerkleTreeNode Parent { get; set; }
+
+        public MerkleTreeNode LeftChild { get; set; }
+
+        public MerkleTreeNode RightChild { get; set; }
     }
 }

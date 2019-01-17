@@ -10,52 +10,57 @@ namespace Neo.Network
 {
     public class UPnP
     {
-        private static string _serviceUrl;
+        private static string serviceUrl;
 
         public static TimeSpan TimeOut { get; set; } = TimeSpan.FromSeconds(3);
 
         public static bool Discover()
         {
-            using (Socket s = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
+            using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
             {
-                s.ReceiveTimeout = (int)TimeOut.TotalMilliseconds;
-                s.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, 1);
-                string req = "M-SEARCH * HTTP/1.1\r\n" +
-                "HOST: 239.255.255.250:1900\r\n" +
-                "ST:upnp:rootdevice\r\n" +
-                "MAN:\"ssdp:discover\"\r\n" +
-                "MX:3\r\n\r\n";
-                byte[] data = Encoding.ASCII.GetBytes(req);
-                IPEndPoint ipe = new IPEndPoint(IPAddress.Broadcast, 1900);
+                socket.ReceiveTimeout = (int)TimeOut.TotalMilliseconds;
+                socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Broadcast, 1);
 
-                DateTime start = DateTime.Now;
+                var request = "M-SEARCH * HTTP/1.1\r\n" +
+                    "HOST: 239.255.255.250:1900\r\n" +
+                    "ST:upnp:rootdevice\r\n" +
+                    "MAN:\"ssdp:discover\"\r\n" +
+                    "MX:3\r\n\r\n";
+
+                var data = Encoding.ASCII.GetBytes(request);
+                var endpoint = new IPEndPoint(IPAddress.Broadcast, 1900);
+                var start = DateTime.Now;
 
                 try
                 {
-                    s.SendTo(data, ipe);
-                    s.SendTo(data, ipe);
-                    s.SendTo(data, ipe);
+                    socket.SendTo(data, endpoint);
+                    socket.SendTo(data, endpoint);
+                    socket.SendTo(data, endpoint);
                 }
                 catch
                 {
                     return false;
                 }
 
-                byte[] buffer = new byte[0x1000];
+                var buffer = new byte[0x1000];
 
                 do
                 {
                     int length;
                     try
                     {
-                        length = s.Receive(buffer);
+                        length = socket.Receive(buffer);
 
-                        string resp = Encoding.ASCII.GetString(buffer, 0, length).ToLower();
-                        if (resp.Contains("upnp:rootdevice"))
+                        var response = Encoding.ASCII.GetString(buffer, 0, length).ToLower();
+                        if (response.Contains("upnp:rootdevice"))
                         {
-                            resp = resp.Substring(resp.ToLower().IndexOf("location:") + 9);
-                            resp = resp.Substring(0, resp.IndexOf("\r")).Trim();
-                            if (!string.IsNullOrEmpty(_serviceUrl = GetServiceUrl(resp)))
+                            var indexOfLocationEnd = response.ToLower().IndexOf("location:") + "location:".Length;
+                            response = response.Substring(indexOfLocationEnd);
+
+                            var uri = response.Substring(0, response.IndexOf("\r")).Trim();
+                            serviceUrl = UPnP.GetServiceUrl(uri);
+
+                            if (!string.IsNullOrEmpty(serviceUrl))
                             {
                                 return true;
                             }
@@ -66,101 +71,129 @@ namespace Neo.Network
                         continue;
                     }
                 }
-                while (DateTime.Now - start < TimeOut);
+                while (DateTime.Now - start < UPnP.TimeOut);
 
                 return false;
             }
+        }
+
+        public static void ForwardPort(int port, ProtocolType protocol, string description)
+        {
+            if (string.IsNullOrEmpty(serviceUrl))
+            {
+                throw new Exception("No UPnP service available or Discover() has not been called");
+            }
+
+            var soap = 
+                "<u:AddPortMapping xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\">" +
+                    "<NewRemoteHost></NewRemoteHost><NewExternalPort>" + port.ToString() + "</NewExternalPort><NewProtocol>" + protocol.ToString().ToUpper() + "</NewProtocol>" +
+                    "<NewInternalPort>" + port.ToString() + "</NewInternalPort><NewInternalClient>" + Dns.GetHostAddresses(Dns.GetHostName()).First(p => p.AddressFamily == AddressFamily.InterNetwork).ToString() +
+                    "</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>" + description +
+                "</NewPortMappingDescription><NewLeaseDuration>0</NewLeaseDuration></u:AddPortMapping>";
+
+            var xdoc = UPnP.SOAPRequest(serviceUrl, soap, "AddPortMapping");
+        }
+
+        public static void DeleteForwardingRule(int port, ProtocolType protocol)
+        {
+            if (string.IsNullOrEmpty(serviceUrl))
+            {
+                throw new Exception("No UPnP service available or Discover() has not been called");
+            }
+
+            string soap =
+                "<u:DeletePortMapping xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\">" +
+                    "<NewRemoteHost>" + "</NewRemoteHost>" +
+                    "<NewExternalPort>" + port + "</NewExternalPort>" +
+                    "<NewProtocol>" + protocol.ToString().ToUpper() + "</NewProtocol>" +
+                "</u:DeletePortMapping>";
+
+            var xdoc = UPnP.SOAPRequest(serviceUrl, soap, "DeletePortMapping");
+        }
+
+        public static IPAddress GetExternalIP()
+        {
+            if (string.IsNullOrEmpty(serviceUrl))
+            {
+                throw new Exception("No UPnP service available or Discover() has not been called");
+            }
+
+            var soap = "<u:GetExternalIPAddress xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\"></u:GetExternalIPAddress>";
+            var soapRequest = UPnP.SOAPRequest(serviceUrl, soap, "GetExternalIPAddress");
+            var namespaceManager = new XmlNamespaceManager(soapRequest.NameTable);
+            namespaceManager.AddNamespace("tns", "urn:schemas-upnp-org:device-1-0");
+
+            var rawIp = soapRequest.SelectSingleNode("//NewExternalIPAddress/text()", namespaceManager).Value;
+            var ip = IPAddress.Parse(rawIp);
+            return ip;
         }
 
         private static string GetServiceUrl(string resp)
         {
             try
             {
-                XmlDocument desc = new XmlDocument();
-                HttpWebRequest request = WebRequest.CreateHttp(resp);
-                using (WebResponse response = request.GetResponse())
+                var desc = new XmlDocument();
+                var webRequest = WebRequest.CreateHttp(resp);
+                using (var webResponse = webRequest.GetResponse())
                 {
-                    desc.Load(response.GetResponseStream());
+                    desc.Load(webResponse.GetResponseStream());
                 }
-                XmlNamespaceManager nsMgr = new XmlNamespaceManager(desc.NameTable);
-                nsMgr.AddNamespace("tns", "urn:schemas-upnp-org:device-1-0");
-                XmlNode typen = desc.SelectSingleNode("//tns:device/tns:deviceType/text()", nsMgr);
-                if (!typen.Value.Contains("InternetGatewayDevice"))
+
+                var namespaceManager = new XmlNamespaceManager(desc.NameTable);
+                namespaceManager.AddNamespace("tns", "urn:schemas-upnp-org:device-1-0");
+
+                var deviceTypeXmlNode = desc.SelectSingleNode("//tns:device/tns:deviceType/text()", namespaceManager);
+                if (!deviceTypeXmlNode.Value.Contains("InternetGatewayDevice"))
+                {
                     return null;
-                XmlNode node = desc.SelectSingleNode("//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:controlURL/text()", nsMgr);
-                if (node == null)
+                }
+
+                var serviceTypeXmlNode = desc.SelectSingleNode("//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:controlURL/text()", namespaceManager);
+                if (serviceTypeXmlNode == null)
+                {
                     return null;
-                XmlNode eventnode = desc.SelectSingleNode("//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:eventSubURL/text()", nsMgr);
-                return CombineUrls(resp, node.Value);
+                }
+
+                var eventXmlNode = desc.SelectSingleNode("//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:eventSubURL/text()", namespaceManager);
+                return CombineUrls(resp, serviceTypeXmlNode.Value);
             }
-            catch { return null; }
+            catch
+            {
+                return null;
+            }
         }
 
-        private static string CombineUrls(string resp, string p)
+        private static string CombineUrls(string resp, string urlSecondPart)
         {
-            int n = resp.IndexOf("://");
-            n = resp.IndexOf('/', n + 3);
-            return resp.Substring(0, n) + p;
-        }
+            var startIndex = resp.IndexOf("://") + 3;
+            var length = resp.IndexOf('/', startIndex);
 
-        public static void ForwardPort(int port, ProtocolType protocol, string description)
-        {
-            if (string.IsNullOrEmpty(_serviceUrl))
-                throw new Exception("No UPnP service available or Discover() has not been called");
-            XmlDocument xdoc = SOAPRequest(_serviceUrl, "<u:AddPortMapping xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\">" +
-                "<NewRemoteHost></NewRemoteHost><NewExternalPort>" + port.ToString() + "</NewExternalPort><NewProtocol>" + protocol.ToString().ToUpper() + "</NewProtocol>" +
-                "<NewInternalPort>" + port.ToString() + "</NewInternalPort><NewInternalClient>" + Dns.GetHostAddresses(Dns.GetHostName()).First(p => p.AddressFamily == AddressFamily.InterNetwork).ToString() +
-                "</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>" + description +
-            "</NewPortMappingDescription><NewLeaseDuration>0</NewLeaseDuration></u:AddPortMapping>", "AddPortMapping");
-        }
-
-        public static void DeleteForwardingRule(int port, ProtocolType protocol)
-        {
-            if (string.IsNullOrEmpty(_serviceUrl))
-                throw new Exception("No UPnP service available or Discover() has not been called");
-            XmlDocument xdoc = SOAPRequest(_serviceUrl,
-            "<u:DeletePortMapping xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\">" +
-            "<NewRemoteHost>" +
-            "</NewRemoteHost>" +
-            "<NewExternalPort>" + port + "</NewExternalPort>" +
-            "<NewProtocol>" + protocol.ToString().ToUpper() + "</NewProtocol>" +
-            "</u:DeletePortMapping>", "DeletePortMapping");
-        }
-
-        public static IPAddress GetExternalIP()
-        {
-            if (string.IsNullOrEmpty(_serviceUrl))
-                throw new Exception("No UPnP service available or Discover() has not been called");
-            XmlDocument xdoc = SOAPRequest(_serviceUrl, "<u:GetExternalIPAddress xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\">" +
-            "</u:GetExternalIPAddress>", "GetExternalIPAddress");
-            XmlNamespaceManager nsMgr = new XmlNamespaceManager(xdoc.NameTable);
-            nsMgr.AddNamespace("tns", "urn:schemas-upnp-org:device-1-0");
-            string IP = xdoc.SelectSingleNode("//NewExternalIPAddress/text()", nsMgr).Value;
-            return IPAddress.Parse(IP);
+            return resp.Substring(0, length) + urlSecondPart;
         }
 
         private static XmlDocument SOAPRequest(string url, string soap, string function)
         {
-            string req = "<?xml version=\"1.0\"?>" +
+            var requestContent = "<?xml version=\"1.0\"?>" +
             "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">" +
-            "<s:Body>" +
-            soap +
-            "</s:Body>" +
+                "<s:Body>" + soap + "</s:Body>" +
             "</s:Envelope>";
-            HttpWebRequest r = WebRequest.CreateHttp(url);
-            r.Method = "POST";
-            byte[] b = Encoding.UTF8.GetBytes(req);
-            r.Headers["SOAPACTION"] = "\"urn:schemas-upnp-org:service:WANIPConnection:1#" + function + "\"";
-            r.ContentType = "text/xml; charset=\"utf-8\"";
-            using (Stream reqs = r.GetRequestStream())
+
+            var request = WebRequest.CreateHttp(url);
+            request.Method = "POST";
+
+            var requestContentBytes = Encoding.UTF8.GetBytes(requestContent);
+            request.Headers["SOAPACTION"] = "\"urn:schemas-upnp-org:service:WANIPConnection:1#" + function + "\"";
+            request.ContentType = "text/xml; charset=\"utf-8\"";
+
+            using (var reqs = request.GetRequestStream())
             {
-                reqs.Write(b, 0, b.Length);
-                XmlDocument resp = new XmlDocument();
-                WebResponse wres = r.GetResponse();
-                using (Stream ress = wres.GetResponseStream())
+                reqs.Write(requestContentBytes, 0, requestContentBytes.Length);
+                var result = new XmlDocument();
+                var webResponse = request.GetResponse();
+                using (var responseStream = webResponse.GetResponseStream())
                 {
-                    resp.Load(ress);
-                    return resp;
+                    result.Load(responseStream);
+                    return result;
                 }
             }
         }

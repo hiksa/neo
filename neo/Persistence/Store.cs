@@ -2,24 +2,25 @@
 using Neo.IO.Caching;
 using Neo.IO.Wrappers;
 using Neo.Ledger;
+using Neo.Ledger.States;
 
 namespace Neo.Persistence
 {
     public abstract class Store : IPersistence
     {
-        DataCache<UInt256, BlockState> IPersistence.Blocks => GetBlocks();
-        DataCache<UInt256, TransactionState> IPersistence.Transactions => GetTransactions();
-        DataCache<UInt160, AccountState> IPersistence.Accounts => GetAccounts();
-        DataCache<UInt256, UnspentCoinState> IPersistence.UnspentCoins => GetUnspentCoins();
-        DataCache<UInt256, SpentCoinState> IPersistence.SpentCoins => GetSpentCoins();
-        DataCache<ECPoint, ValidatorState> IPersistence.Validators => GetValidators();
-        DataCache<UInt256, AssetState> IPersistence.Assets => GetAssets();
-        DataCache<UInt160, ContractState> IPersistence.Contracts => GetContracts();
-        DataCache<StorageKey, StorageItem> IPersistence.Storages => GetStorages();
-        DataCache<UInt32Wrapper, HeaderHashList> IPersistence.HeaderHashList => GetHeaderHashList();
-        MetaDataCache<ValidatorsCountState> IPersistence.ValidatorsCount => GetValidatorsCount();
-        MetaDataCache<HashIndexState> IPersistence.BlockHashIndex => GetBlockHashIndex();
-        MetaDataCache<HashIndexState> IPersistence.HeaderHashIndex => GetHeaderHashIndex();
+        DataCache<UInt256, BlockState> IPersistence.Blocks => this.GetBlocks();
+        DataCache<UInt256, TransactionState> IPersistence.Transactions => this.GetTransactions();
+        DataCache<UInt160, AccountState> IPersistence.Accounts => this.GetAccounts();
+        DataCache<UInt256, UnspentCoinState> IPersistence.UnspentCoins => this.GetUnspentCoins();
+        DataCache<UInt256, SpentCoinState> IPersistence.SpentCoins => this.GetSpentCoins();
+        DataCache<ECPoint, ValidatorState> IPersistence.Validators => this.GetValidators();
+        DataCache<UInt256, AssetState> IPersistence.Assets => this.GetAssets();
+        DataCache<UInt160, ContractState> IPersistence.Contracts => this.GetContracts();
+        DataCache<StorageKey, StorageItem> IPersistence.Storages => this.GetStorages();
+        DataCache<UInt32Wrapper, HeaderHashList> IPersistence.HeaderHashList => this.GetHeaderHashList();
+        MetaDataCache<ValidatorsCountState> IPersistence.ValidatorsCount => this.GetValidatorsCount();
+        MetaDataCache<HashIndexState> IPersistence.BlockHashIndex => this.GetBlockHashIndex();
+        MetaDataCache<HashIndexState> IPersistence.HeaderHashIndex => this.GetHeaderHashIndex();
 
         public abstract DataCache<UInt256, BlockState> GetBlocks();
         public abstract DataCache<UInt256, TransactionState> GetTransactions();

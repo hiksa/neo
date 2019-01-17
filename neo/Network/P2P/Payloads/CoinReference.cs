@@ -1,54 +1,76 @@
-﻿using Neo.IO;
-using Neo.IO.Json;
-using System;
+﻿using System;
 using System.IO;
+using Neo.Extensions;
+using Neo.IO;
+using Neo.IO.Json;
 
 namespace Neo.Network.P2P.Payloads
 {
     public class CoinReference : IEquatable<CoinReference>, ISerializable
     {
-        public UInt256 PrevHash;
-        public ushort PrevIndex;
+        public UInt256 PrevHash { get; set; }
 
-        public int Size => PrevHash.Size + sizeof(ushort);
+        public ushort PrevIndex { get; set; }
+
+        public int Size => this.PrevHash.Size + sizeof(ushort);
 
         void ISerializable.Deserialize(BinaryReader reader)
         {
-            PrevHash = reader.ReadSerializable<UInt256>();
-            PrevIndex = reader.ReadUInt16();
+            this.PrevHash = reader.ReadSerializable<UInt256>();
+            this.PrevIndex = reader.ReadUInt16();
         }
 
         public bool Equals(CoinReference other)
         {
-            if (ReferenceEquals(this, other)) return true;
-            if (other is null) return false;
-            return PrevHash.Equals(other.PrevHash) && PrevIndex.Equals(other.PrevIndex);
+            if (object.ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            if (other is null)
+            {
+                return false;
+            }
+
+            return this.PrevHash.Equals(other.PrevHash) && this.PrevIndex.Equals(other.PrevIndex);
         }
 
         public override bool Equals(object obj)
         {
-            if (ReferenceEquals(this, obj)) return true;
-            if (obj is null) return false;
-            if (!(obj is CoinReference)) return false;
-            return Equals((CoinReference)obj);
+            if (object.ReferenceEquals(this, obj))
+            {
+                return true;
+            }
+
+            if (obj is null)
+            {
+                return false;
+            }
+
+            if (!(obj is CoinReference))
+            {
+                return false;
+            }
+
+            return this.Equals((CoinReference)obj);
         }
 
         public override int GetHashCode()
         {
-            return PrevHash.GetHashCode() + PrevIndex.GetHashCode();
+            return this.PrevHash.GetHashCode() + this.PrevIndex.GetHashCode();
         }
 
         void ISerializable.Serialize(BinaryWriter writer)
         {
-            writer.Write(PrevHash);
-            writer.Write(PrevIndex);
+            writer.Write(this.PrevHash);
+            writer.Write(this.PrevIndex);
         }
 
         public JObject ToJson()
         {
-            JObject json = new JObject();
-            json["txid"] = PrevHash.ToString();
-            json["vout"] = PrevIndex;
+            var json = new JObject();
+            json["txid"] = this.PrevHash.ToString();
+            json["vout"] = this.PrevIndex;
             return json;
         }
     }

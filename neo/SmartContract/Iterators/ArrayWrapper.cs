@@ -1,6 +1,6 @@
-﻿using Neo.VM;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using Neo.VM;
 
 namespace Neo.SmartContract.Iterators
 {
@@ -20,25 +20,34 @@ namespace Neo.SmartContract.Iterators
 
         public StackItem Key()
         {
-            if (index < 0)
+            if (this.index < 0)
+            {
                 throw new InvalidOperationException();
-            return index;
+            }
+
+            return this.index;
         }
 
         public bool Next()
         {
-            int next = index + 1;
-            if (next >= array.Count)
+            var next = this.index + 1;
+            if (next >= this.array.Count)
+            {
                 return false;
-            index = next;
+            }
+
+            this.index = next;
             return true;
         }
 
         public StackItem Value()
         {
-            if (index < 0)
+            if (this.index < 0)
+            {
                 throw new InvalidOperationException();
-            return array[index];
+            }
+
+            return this.array[this.index];
         }
     }
 }

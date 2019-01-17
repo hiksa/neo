@@ -2,7 +2,8 @@
 {
     public class TransactionResult
     {
-        public UInt256 AssetId;
-        public Fixed8 Amount;
+        public UInt256 AssetId { get; set; }
+
+        public Fixed8 Amount { get; set; }
     }
 }

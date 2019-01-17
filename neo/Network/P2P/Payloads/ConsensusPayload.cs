@@ -1,34 +1,42 @@
-﻿using Neo.Cryptography;
-using Neo.Cryptography.ECC;
+﻿using System;
+using System.IO;
+using Neo.Cryptography;
+using Neo.Extensions;
 using Neo.IO;
 using Neo.Persistence;
 using Neo.SmartContract;
 using Neo.VM;
-using System;
-using System.IO;
 
 namespace Neo.Network.P2P.Payloads
 {
     public class ConsensusPayload : IInventory
     {
-        public uint Version;
-        public UInt256 PrevHash;
-        public uint BlockIndex;
-        public ushort ValidatorIndex;
-        public uint Timestamp;
-        public byte[] Data;
-        public Witness Witness;
+        private UInt256 hash = null;
 
-        private UInt256 _hash = null;
+        public uint Version { get; set; }
+
+        public UInt256 PrevHash { get; set; }
+
+        public uint BlockIndex { get; set; }
+
+        public ushort ValidatorIndex { get; set; }
+
+        public uint Timestamp { get; set; }
+
+        public byte[] Data { get; set; }
+
+        public Witness Witness { get; set; }
+
         UInt256 IInventory.Hash
         {
             get
             {
-                if (_hash == null)
+                if (this.hash == null)
                 {
-                    _hash = new UInt256(Crypto.Default.Hash256(this.GetHashData()));
+                    this.hash = new UInt256(Crypto.Default.Hash256(this.GetHashData()));
                 }
-                return _hash;
+
+                return this.hash;
             }
         }
 
@@ -38,67 +46,87 @@ namespace Neo.Network.P2P.Payloads
         {
             get
             {
-                return new[] { Witness };
+                return new[] { this.Witness };
             }
+
             set
             {
-                if (value.Length != 1) throw new ArgumentException();
-                Witness = value[0];
+                if (value.Length != 1)
+                {
+                    throw new ArgumentException();
+                }
+
+                this.Witness = value[0];
             }
         }
 
-        public int Size => sizeof(uint) + PrevHash.Size + sizeof(uint) + sizeof(ushort) + sizeof(uint) + Data.GetVarSize() + 1 + Witness.Size;
+        public int Size => 
+            sizeof(uint) + this.PrevHash.Size + sizeof(uint) 
+            + sizeof(ushort) + sizeof(uint) + this.Data.GetVarSize() 
+            + 1 + this.Witness.Size;
 
         void ISerializable.Deserialize(BinaryReader reader)
         {
             ((IVerifiable)this).DeserializeUnsigned(reader);
-            if (reader.ReadByte() != 1) throw new FormatException();
-            Witness = reader.ReadSerializable<Witness>();
+            if (reader.ReadByte() != 1)
+            {
+                throw new FormatException();
+            }
+
+            this.Witness = reader.ReadSerializable<Witness>();
         }
 
         void IVerifiable.DeserializeUnsigned(BinaryReader reader)
         {
-            Version = reader.ReadUInt32();
-            PrevHash = reader.ReadSerializable<UInt256>();
-            BlockIndex = reader.ReadUInt32();
-            ValidatorIndex = reader.ReadUInt16();
-            Timestamp = reader.ReadUInt32();
-            Data = reader.ReadVarBytes();
+            this.Version = reader.ReadUInt32();
+            this.PrevHash = reader.ReadSerializable<UInt256>();
+            this.BlockIndex = reader.ReadUInt32();
+            this.ValidatorIndex = reader.ReadUInt16();
+            this.Timestamp = reader.ReadUInt32();
+            this.Data = reader.ReadVarBytes();
         }
 
-        byte[] IScriptContainer.GetMessage()
-        {
-            return this.GetHashData();
-        }
+        byte[] IScriptContainer.GetMessage() => this.GetHashData();
 
         UInt160[] IVerifiable.GetScriptHashesForVerifying(Snapshot snapshot)
         {
-            ECPoint[] validators = snapshot.GetValidators();
-            if (validators.Length <= ValidatorIndex)
+            var validators = snapshot.GetValidators();
+            if (validators.Length <= this.ValidatorIndex)
+            {
                 throw new InvalidOperationException();
-            return new[] { Contract.CreateSignatureRedeemScript(validators[ValidatorIndex]).ToScriptHash() };
+            }
+
+            var validatorHash = Contract
+                .CreateSignatureRedeemScript(validators[this.ValidatorIndex])
+                .ToScriptHash();
+
+            return new[] { validatorHash };
         }
 
         void ISerializable.Serialize(BinaryWriter writer)
         {
             ((IVerifiable)this).SerializeUnsigned(writer);
-            writer.Write((byte)1); writer.Write(Witness);
+            writer.Write((byte)1);
+            writer.Write(this.Witness);
         }
 
         void IVerifiable.SerializeUnsigned(BinaryWriter writer)
         {
-            writer.Write(Version);
-            writer.Write(PrevHash);
-            writer.Write(BlockIndex);
-            writer.Write(ValidatorIndex);
-            writer.Write(Timestamp);
-            writer.WriteVarBytes(Data);
+            writer.Write(this.Version);
+            writer.Write(this.PrevHash);
+            writer.Write(this.BlockIndex);
+            writer.Write(this.ValidatorIndex);
+            writer.Write(this.Timestamp);
+            writer.WriteVarBytes(this.Data);
         }
 
         public bool Verify(Snapshot snapshot)
         {
-            if (BlockIndex <= snapshot.Height)
+            if (this.BlockIndex <= snapshot.Height)
+            {
                 return false;
+            }
+
             return this.VerifyWitnesses(snapshot);
         }
     }

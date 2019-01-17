@@ -8,6 +8,6 @@ namespace Neo.Ledger
         public uint StartHeight;
         public uint EndHeight;
 
-        public Fixed8 Value => Output.Value;
+        public Fixed8 Value => this.Output.Value;
     }
 }

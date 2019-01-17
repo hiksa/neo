@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Neo.Cryptography.ECC;
 using Neo.IO;
 using Neo.Ledger;
+using Neo.Ledger.States;
 using Neo.Network.P2P.Payloads;
 using System.Globalization;
 using System.IO;
@@ -38,15 +39,15 @@ namespace Neo.UnitTests
         [TestMethod]
         public void AssetType_Get()
         {
-            uut.AssetType.Should().Be(AssetType.GoverningToken); // Uninitialised AssetType defaults to this enum value, be careful
+            uut.Type.Should().Be(AssetType.GoverningToken); // Uninitialised AssetType defaults to this enum value, be careful
         }
 
         [TestMethod]
         public void AssetType_Set()
         {
             AssetType val = new AssetType();
-            uut.AssetType = val;
-            uut.AssetType.Should().Be(val);
+            uut.Type = val;
+            uut.Type.Should().Be(val);
         }
 
         [TestMethod]
@@ -213,7 +214,7 @@ namespace Neo.UnitTests
             assetId = new UInt256(TestUtils.GetByteArray(32, 0x20));
             assetState.AssetId = assetId;
             assetType = AssetType.Token;
-            assetState.AssetType = assetType;
+            assetState.Type = assetType;
 
             name = "neo";
             assetState.Name = name;
@@ -283,7 +284,7 @@ namespace Neo.UnitTests
             AssetState newAs = ((ICloneable<AssetState>)uut).Clone();
 
             newAs.AssetId.Should().Be(assetId);
-            newAs.AssetType.Should().Be(assetType);
+            newAs.Type.Should().Be(assetType);
             newAs.Name.Should().Be(name);
             newAs.Amount.Should().Be(amount);
             newAs.Available.Should().Be(available);
@@ -315,7 +316,7 @@ namespace Neo.UnitTests
 
             ((ICloneable<AssetState>)uut).FromReplica(assetState);
             uut.AssetId.Should().Be(assetId);
-            uut.AssetType.Should().Be(assetType);
+            uut.Type.Should().Be(assetType);
             uut.Name.Should().Be(name);
             uut.Amount.Should().Be(amount);
             uut.Available.Should().Be(available);
@@ -354,7 +355,7 @@ namespace Neo.UnitTests
             }
 
             uut.AssetId.Should().Be(assetId);
-            uut.AssetType.Should().Be(assetType);
+            uut.Type.Should().Be(assetType);
             uut.Name.Should().Be(name);
             uut.Amount.Should().Be(amount);
             uut.Available.Should().Be(available);

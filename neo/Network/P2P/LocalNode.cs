@@ -1,8 +1,4 @@
-﻿using Akka.Actor;
-using Neo.IO;
-using Neo.Ledger;
-using Neo.Network.P2P.Payloads;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,127 +6,89 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
+using Akka.Actor;
+using Neo.Extensions;
+using Neo.IO;
+using Neo.Ledger;
+using Neo.Network.P2P.Payloads;
 
 namespace Neo.Network.P2P
 {
     public class LocalNode : Peer
     {
-        public class Relay { public IInventory Inventory; }
-        internal class RelayDirectly { public IInventory Inventory; }
-        internal class SendDirectly { public IInventory Inventory; }
-
         public const uint ProtocolVersion = 0;
 
-        private static readonly object lockObj = new object();
-        private readonly NeoSystem system;
+        public static readonly uint Nonce;
+
         internal readonly ConcurrentDictionary<IActorRef, RemoteNode> RemoteNodes = new ConcurrentDictionary<IActorRef, RemoteNode>();
 
-        public int ConnectedCount => RemoteNodes.Count;
-        public int UnconnectedCount => UnconnectedPeers.Count;
-        public static readonly uint Nonce;
-        public static string UserAgent { get; set; }
+        private static readonly object LockObj = new object();
+        private static LocalNode instance;
 
-        private static LocalNode singleton { get; set; }
-        public static LocalNode Singleton
-        {
-            get
-            {
-                while (singleton == null) Thread.Sleep(10);
-                return singleton;
-            }
-        }
-
+        private readonly NeoSystem system;
+        
         static LocalNode()
         {
-            Random rand = new Random();
-            Nonce = (uint)rand.Next();
-            UserAgent = $"/{Assembly.GetExecutingAssembly().GetName().Name}:{Assembly.GetExecutingAssembly().GetVersion()}/";
+            var rand = new Random();
+            LocalNode.Nonce = (uint)rand.Next();
+
+            var assemblyName = Assembly.GetExecutingAssembly().GetName().Name;
+            var assemblyVersion = Assembly.GetExecutingAssembly().GetVersion();
+
+            LocalNode.UserAgent = $"/{assemblyName}:{assemblyVersion}/";
         }
 
         public LocalNode(NeoSystem system)
         {
-            lock (lockObj)
+            lock (LocalNode.LockObj)
             {
-                if (singleton != null)
-                    throw new InvalidOperationException();
-                this.system = system;
-                singleton = this;
-            }
-        }
-
-        private void BroadcastMessage(string command, ISerializable payload = null)
-        {
-            BroadcastMessage(Message.Create(command, payload));
-        }
-
-        private void BroadcastMessage(Message message)
-        {
-            Connections.Tell(message);
-        }
-
-        private static IPEndPoint GetIPEndpointFromHostPort(string hostNameOrAddress, int port)
-        {
-            if (IPAddress.TryParse(hostNameOrAddress, out IPAddress ipAddress))
-                return new IPEndPoint(ipAddress, port);
-            IPHostEntry entry;
-            try
-            {
-                entry = Dns.GetHostEntry(hostNameOrAddress);
-            }
-            catch (SocketException)
-            {
-                return null;
-            }
-            ipAddress = entry.AddressList.FirstOrDefault(p => p.AddressFamily == AddressFamily.InterNetwork || p.IsIPv6Teredo);
-            if (ipAddress == null) return null;
-            return new IPEndPoint(ipAddress, port);
-        }
-
-        private static IEnumerable<IPEndPoint> GetIPEndPointsFromSeedList(int seedsToTake)
-        {
-            if (seedsToTake > 0)
-            {
-                Random rand = new Random();
-                foreach (string hostAndPort in ProtocolSettings.Default.SeedList.OrderBy(p => rand.Next()))
+                if (instance != null)
                 {
-                    if (seedsToTake == 0) break;
-                    string[] p = hostAndPort.Split(':');
-                    IPEndPoint seed;
-                    try
-                    {
-                        seed = GetIPEndpointFromHostPort(p[0], int.Parse(p[1]));
-                    }
-                    catch (AggregateException)
-                    {
-                        continue;
-                    }
-                    if (seed == null) continue;
-                    seedsToTake--;
-                    yield return seed;
+                    throw new InvalidOperationException();
                 }
+
+                this.system = system;
+                instance = this;
             }
         }
 
-        public IEnumerable<RemoteNode> GetRemoteNodes()
+        public static LocalNode Instance
         {
-            return RemoteNodes.Values;
+            get
+            {
+                while (instance == null)
+                {
+                    Thread.Sleep(10);
+                }
+
+                return instance;
+            }
         }
 
-        public IEnumerable<IPEndPoint> GetUnconnectedPeers()
-        {
-            return UnconnectedPeers;
-        }
+        public static string UserAgent { get; set; }
+
+        public int ConnectedCount => this.RemoteNodes.Count;
+
+        public int UnconnectedCount => this.UnconnectedPeers.Count;
+
+        public static Props Props(NeoSystem system) =>
+            Akka.Actor.Props.Create(() => new LocalNode(system));
+
+        public IEnumerable<RemoteNode> GetRemoteNodes() => this.RemoteNodes.Values;
+
+        public IEnumerable<IPEndPoint> GetUnconnectedPeers() => this.UnconnectedPeers;
 
         protected override void NeedMorePeers(int count)
         {
-            count = Math.Max(count, 5);
-            if (ConnectedPeers.Count > 0)
+            if (this.ConnectedPeers.Count > 0)
             {
-                BroadcastMessage("getaddr");
+                this.BroadcastMessage("getaddr");
             }
             else
             {
-                AddPeers(GetIPEndPointsFromSeedList(count));
+                var maxCount = Math.Max(count, 5);
+                var moreEndpoints = LocalNode.GetIPEndPointsFromSeedList(maxCount);
+                this.AddPeers(moreEndpoints);
             }
         }
 
@@ -140,47 +98,134 @@ namespace Neo.Network.P2P
             switch (message)
             {
                 case Message msg:
-                    BroadcastMessage(msg);
+                    this.BroadcastMessage(msg);
                     break;
                 case Relay relay:
-                    OnRelay(relay.Inventory);
+                    this.OnRelay(relay.Inventory);
                     break;
                 case RelayDirectly relay:
-                    OnRelayDirectly(relay.Inventory);
+                    this.OnRelayDirectly(relay.Inventory);
                     break;
                 case SendDirectly send:
-                    OnSendDirectly(send.Inventory);
+                    this.OnSendDirectly(send.Inventory);
                     break;
                 case RelayResultReason _:
                     break;
             }
         }
+        
+        protected override Props ProtocolProps(object connection, IPEndPoint remote, IPEndPoint local) =>
+            RemoteNode.Props(this.system, connection, remote, local);
+        
+        private static IPEndPoint GetIPEndpointFromHostPort(string hostNameOrAddress, int port)
+        {
+            if (IPAddress.TryParse(hostNameOrAddress, out IPAddress ipAddress))
+            {
+                return new IPEndPoint(ipAddress, port);
+            }
+
+            IPHostEntry entry;
+            try
+            {
+                entry = Dns.GetHostEntry(hostNameOrAddress);
+            }
+            catch (SocketException)
+            {
+                return null;
+            }
+
+            ipAddress = entry
+                .AddressList
+                .FirstOrDefault(p => p.AddressFamily == AddressFamily.InterNetwork || p.IsIPv6Teredo);
+
+            if (ipAddress == null)
+            {
+                return null;
+            }
+
+            return new IPEndPoint(ipAddress, port);
+        }
+
+        private static IEnumerable<IPEndPoint> GetIPEndPointsFromSeedList(int seedsToTake)
+        {
+            if (seedsToTake > 0)
+            {
+                var seeds = ProtocolSettings.Default.SeedList.OrderBy(p => Guid.NewGuid());
+                foreach (var address in seeds)
+                {
+                    var p = address.Split(':');
+                    IPEndPoint seed;
+                    try
+                    {
+                        seed = LocalNode.GetIPEndpointFromHostPort(p[0], int.Parse(p[1]));
+                    }
+                    catch (AggregateException)
+                    {
+                        continue;
+                    }
+
+                    if (seed == null)
+                    {
+                        continue;
+                    }
+
+                    seedsToTake--;
+
+                    yield return seed;
+                }
+            }
+        }
+
+        private void BroadcastMessage(string command, ISerializable payload = null) =>
+            this.BroadcastMessage(Message.Create(command, payload));
+
+        private void BroadcastMessage(Message message) =>
+            this.Connections.Tell(message);
 
         private void OnRelay(IInventory inventory)
         {
             if (inventory is Transaction transaction)
-                system.Consensus?.Tell(transaction);
-            system.Blockchain.Tell(inventory);
+            {
+                this.system.ConsensusServiceActorRef?.Tell(transaction);
+            }
+
+            this.system.BlockchainActorRef.Tell(inventory);
         }
 
-        private void OnRelayDirectly(IInventory inventory)
+        private void OnRelayDirectly(IInventory inventory) =>
+            this.Connections.Tell(new RemoteNode.Relay(inventory));
+        
+        private void OnSendDirectly(IInventory inventory) =>
+            this.Connections.Tell(inventory);
+
+        public class Relay
         {
-            Connections.Tell(new RemoteNode.Relay { Inventory = inventory });
+            public Relay(IInventory inventory)
+            {
+                this.Inventory = inventory;
+            }
+
+            public IInventory Inventory { get; private set; }
         }
 
-        private void OnSendDirectly(IInventory inventory)
+        internal class RelayDirectly
         {
-            Connections.Tell(inventory);
+            public RelayDirectly(IInventory inventory)
+            {
+                this.Inventory = inventory;
+            }
+
+            public IInventory Inventory { get; private set; }
         }
 
-        public static Props Props(NeoSystem system)
+        internal class SendDirectly
         {
-            return Akka.Actor.Props.Create(() => new LocalNode(system));
-        }
+            public SendDirectly(IInventory inventory)
+            {
+                this.Inventory = inventory;
+            }
 
-        protected override Props ProtocolProps(object connection, IPEndPoint remote, IPEndPoint local)
-        {
-            return RemoteNode.Props(system, connection, remote, local);
+            public IInventory Inventory { get; private set; }
         }
     }
 }

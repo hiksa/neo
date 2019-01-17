@@ -1,25 +1,30 @@
-﻿using Neo.Network.P2P.Payloads;
-using System;
+﻿using System;
+using Neo.Network.P2P.Payloads;
 
 namespace Neo.Wallets
 {
     public class TransferOutput
     {
-        public UIntBase AssetId;
-        public BigDecimal Value;
-        public UInt160 ScriptHash;
+        public bool IsGlobalAsset => this.AssetId.Size == 32;
 
-        public bool IsGlobalAsset => AssetId.Size == 32;
+        public UIntBase AssetId { get; set; }
+
+        public BigDecimal Value { get; set; }
+
+        public UInt160 ScriptHash { get; set; }
 
         public TransactionOutput ToTxOutput()
         {
-            if (AssetId is UInt256 asset_id)
+            if (this.AssetId is UInt256 assetId)
+            {
                 return new TransactionOutput
                 {
-                    AssetId = asset_id,
-                    Value = Value.ToFixed8(),
-                    ScriptHash = ScriptHash
+                    AssetId = assetId,
+                    Value = this.Value.ToFixed8(),
+                    ScriptHash = this.ScriptHash
                 };
+            }
+
             throw new NotSupportedException();
         }
     }

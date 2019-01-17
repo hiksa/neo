@@ -12,15 +12,9 @@ namespace Neo.IO.Wrappers
 
         public abstract void Deserialize(BinaryReader reader);
 
-        public bool Equals(T other)
-        {
-            return value.Equals(other);
-        }
+        public bool Equals(T other) => this.value.Equals(other);
 
-        public bool Equals(SerializableWrapper<T> other)
-        {
-            return value.Equals(other.value);
-        }
+        public bool Equals(SerializableWrapper<T> other) => this.value.Equals(other.value);
 
         public abstract void Serialize(BinaryWriter writer);
     }

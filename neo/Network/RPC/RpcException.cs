@@ -6,7 +6,7 @@ namespace Neo.Network.RPC
     {
         public RpcException(int code, string message) : base(message)
         {
-            HResult = code;
+            this.HResult = code;
         }
     }
 }

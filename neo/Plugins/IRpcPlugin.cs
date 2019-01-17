@@ -5,6 +5,6 @@ namespace Neo.Plugins
 {
     public interface IRpcPlugin
     {
-        JObject OnProcess(HttpContext context, string method, JArray _params);
+        JObject OnProcess(HttpContext context, string method, JArray @params);
     }
 }

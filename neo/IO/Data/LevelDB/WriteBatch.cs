@@ -8,22 +8,27 @@ namespace Neo.IO.Data.LevelDB
 
         ~WriteBatch()
         {
-            Native.leveldb_writebatch_destroy(handle);
+            Native.leveldb_writebatch_destroy(this.handle);
         }
 
         public void Clear()
         {
-            Native.leveldb_writebatch_clear(handle);
+            Native.leveldb_writebatch_clear(this.handle);
         }
 
         public void Delete(Slice key)
         {
-            Native.leveldb_writebatch_delete(handle, key.buffer, (UIntPtr)key.buffer.Length);
+            Native.leveldb_writebatch_delete(this.handle, key.buffer, (UIntPtr)key.buffer.Length);
         }
 
         public void Put(Slice key, Slice value)
         {
-            Native.leveldb_writebatch_put(handle, key.buffer, (UIntPtr)key.buffer.Length, value.buffer, (UIntPtr)value.buffer.Length);
+            Native.leveldb_writebatch_put(
+                this.handle, 
+                key.buffer, 
+                (UIntPtr)key.buffer.Length, 
+                value.buffer, 
+                (UIntPtr)value.buffer.Length);
         }
     }
 }

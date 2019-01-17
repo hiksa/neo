@@ -1,9 +1,11 @@
-﻿using Neo.IO;
+﻿using System.IO;
+using System.Linq;
+using Neo.Extensions;
+using Neo.IO;
 using Neo.IO.Caching;
 using Neo.IO.Json;
+using Neo.Ledger.States;
 using Neo.Network.P2P.Payloads;
-using System.IO;
-using System.Linq;
 
 namespace Neo.Ledger
 {
@@ -11,65 +13,69 @@ namespace Neo.Ledger
     {
         public UInt256[] Hashes;
 
-        public bool IsBlock => Hashes.Length > 0;
+        private Header header = null;
 
-        public Block GetBlock(DataCache<UInt256, TransactionState> cache)
-        {
-            return new Block
-            {
-                Version = Version,
-                PrevHash = PrevHash,
-                MerkleRoot = MerkleRoot,
-                Timestamp = Timestamp,
-                Index = Index,
-                ConsensusData = ConsensusData,
-                NextConsensus = NextConsensus,
-                Witness = Witness,
-                Transactions = Hashes.Select(p => cache[p].Transaction).ToArray()
-            };
-        }
+        public bool IsBlock => this.Hashes.Any();
 
-        private Header _header = null;
         public Header Header
         {
             get
             {
-                if (_header == null)
+                if (this.header == null)
                 {
-                    _header = new Header
+                    this.header = new Header
                     {
-                        Version = Version,
-                        PrevHash = PrevHash,
-                        MerkleRoot = MerkleRoot,
-                        Timestamp = Timestamp,
-                        Index = Index,
-                        ConsensusData = ConsensusData,
-                        NextConsensus = NextConsensus,
-                        Witness = Witness
+                        Version = this.Version,
+                        PrevHash = this.PrevHash,
+                        MerkleRoot = this.MerkleRoot,
+                        Timestamp = this.Timestamp,
+                        Index = this.Index,
+                        ConsensusData = this.ConsensusData,
+                        NextConsensus = this.NextConsensus,
+                        Witness = this.Witness
                     };
                 }
-                return _header;
+
+                return this.header;
             }
         }
 
         public override int Size => base.Size + Hashes.GetVarSize();
 
+        public Block GetBlock(DataCache<UInt256, TransactionState> cache)
+        {
+            return new Block
+            {
+                Version = this.Version,
+                PrevHash = this.PrevHash,
+                MerkleRoot = this.MerkleRoot,
+                Timestamp = this.Timestamp,
+                Index = this.Index,
+                ConsensusData = this.ConsensusData,
+                NextConsensus = this.NextConsensus,
+                Witness = this.Witness,
+                Transactions = this.Hashes.Select(p => cache[p].Transaction).ToArray()
+            };
+        }
+
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            Hashes = reader.ReadSerializableArray<UInt256>();
+
+            this.Hashes = reader.ReadSerializableArray<UInt256>();
         }
 
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
-            writer.Write(Hashes);
+
+            writer.Write(this.Hashes);
         }
 
         public override JObject ToJson()
         {
-            JObject json = base.ToJson();
-            json["hashes"] = Hashes.Select(p => (JObject)p.ToString()).ToArray();
+            var json = base.ToJson();
+            json["hashes"] = this.Hashes.Select(p => (JObject)p.ToString()).ToArray();
             return json;
         }
     }

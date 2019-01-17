@@ -1,6 +1,7 @@
-﻿using Neo.IO;
-using System;
+﻿using System;
 using System.IO;
+using Neo.Extensions;
+using Neo.IO;
 
 namespace Neo.Network.P2P.Payloads
 {
@@ -8,9 +9,9 @@ namespace Neo.Network.P2P.Payloads
     {
         public const int MaxCountToSend = 200;
 
-        public NetworkAddressWithTime[] AddressList;
+        public NetworkAddressWithTime[] AddressList { get; private set; }
 
-        public int Size => AddressList.GetVarSize();
+        public int Size => this.AddressList.GetVarSize();
 
         public static AddrPayload Create(params NetworkAddressWithTime[] addresses)
         {
@@ -22,14 +23,14 @@ namespace Neo.Network.P2P.Payloads
 
         void ISerializable.Deserialize(BinaryReader reader)
         {
-            AddressList = reader.ReadSerializableArray<NetworkAddressWithTime>(MaxCountToSend);
-            if (AddressList.Length == 0)
+            this.AddressList = reader.ReadSerializableArray<NetworkAddressWithTime>(AddrPayload.MaxCountToSend);
+            if (this.AddressList.Length == 0)
+            {
                 throw new FormatException();
+            }
         }
 
-        void ISerializable.Serialize(BinaryWriter writer)
-        {
-            writer.Write(AddressList);
-        }
+        void ISerializable.Serialize(BinaryWriter writer) =>
+            writer.Write(this.AddressList);        
     }
 }

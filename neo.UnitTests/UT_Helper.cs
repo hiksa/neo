@@ -1,6 +1,6 @@
 ﻿using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Neo.Network.P2P;
+using Neo.Extensions;
 using Neo.SmartContract;
 using Neo.Wallets;
 

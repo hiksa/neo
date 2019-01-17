@@ -12,19 +12,10 @@ namespace Neo.SmartContract.Enumerators
             this.iterator = iterator;
         }
 
-        public void Dispose()
-        {
-            iterator.Dispose();
-        }
+        public void Dispose() => this.iterator.Dispose();
 
-        public bool Next()
-        {
-            return iterator.Next();
-        }
+        public bool Next() => this.iterator.Next();
 
-        public StackItem Value()
-        {
-            return iterator.Value();
-        }
+        public StackItem Value() => this.iterator.Value();
     }
 }

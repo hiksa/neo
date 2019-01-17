@@ -9,40 +9,30 @@ namespace Neo.IO.Caching
     {
         private DataCache<TKey, TValue> innerCache;
 
-        public CloneCache(DataCache<TKey, TValue> innerCache)
-        {
-            this.innerCache = innerCache;
-        }
+        public CloneCache(DataCache<TKey, TValue> innerCache) => 
+            this.innerCache = innerCache;        
 
-        protected override void AddInternal(TKey key, TValue value)
-        {
-            innerCache.Add(key, value);
-        }
+        protected override void AddInternal(TKey key, TValue value) => 
+            this.innerCache.Add(key, value);
 
-        public override void DeleteInternal(TKey key)
-        {
-            innerCache.Delete(key);
-        }
+        public override void DeleteInternal(TKey key) => 
+            this.innerCache.Delete(key);        
 
-        protected override IEnumerable<KeyValuePair<TKey, TValue>> FindInternal(byte[] key_prefix)
+        protected override IEnumerable<KeyValuePair<TKey, TValue>> FindInternal(byte[] keyPrefix)
         {
-            foreach (KeyValuePair<TKey, TValue> pair in innerCache.Find(key_prefix))
+            foreach (KeyValuePair<TKey, TValue> pair in this.innerCache.Find(keyPrefix))
+            {
                 yield return new KeyValuePair<TKey, TValue>(pair.Key, pair.Value.Clone());
+            }
         }
 
-        protected override TValue GetInternal(TKey key)
-        {
-            return innerCache[key].Clone();
-        }
+        protected override TValue GetInternal(TKey key) =>
+            this.innerCache[key].Clone();        
 
-        protected override TValue TryGetInternal(TKey key)
-        {
-            return innerCache.TryGet(key)?.Clone();
-        }
+        protected override TValue TryGetInternal(TKey key) =>
+            this.innerCache.TryGet(key)?.Clone();
 
-        protected override void UpdateInternal(TKey key, TValue value)
-        {
-            innerCache.GetAndChange(key).FromReplica(value);
-        }
+        protected override void UpdateInternal(TKey key, TValue value) =>
+            this.innerCache.GetAndChange(key).FromReplica(value);        
     }
 }

@@ -1,8 +1,9 @@
-﻿using Neo.Cryptography;
-using Neo.IO;
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
+using Neo.Cryptography;
+using Neo.Extensions;
+using Neo.IO;
 
 namespace Neo.Ledger
 {
@@ -11,39 +12,51 @@ namespace Neo.Ledger
         public UInt160 ScriptHash;
         public byte[] Key;
 
-        int ISerializable.Size => ScriptHash.Size + (Key.Length / 16 + 1) * 17;
+        int ISerializable.Size => this.ScriptHash.Size + ((this.Key.Length / 16) + 1) * 17;
 
         void ISerializable.Deserialize(BinaryReader reader)
         {
-            ScriptHash = reader.ReadSerializable<UInt160>();
-            Key = reader.ReadBytesWithGrouping();
+            this.ScriptHash = reader.ReadSerializable<UInt160>();
+            this.Key = reader.ReadBytesWithGrouping();
         }
 
         public bool Equals(StorageKey other)
         {
             if (other is null)
+            {
                 return false;
-            if (ReferenceEquals(this, other))
+            }
+
+            if (object.ReferenceEquals(this, other))
+            {
                 return true;
-            return ScriptHash.Equals(other.ScriptHash) && Key.SequenceEqual(other.Key);
+            }
+
+            return this.ScriptHash.Equals(other.ScriptHash) && this.Key.SequenceEqual(other.Key);
         }
 
         public override bool Equals(object obj)
         {
-            if (obj is null) return false;
-            if (!(obj is StorageKey)) return false;
-            return Equals((StorageKey)obj);
+            if (obj is null)
+            {
+                return false;
+            }
+
+            if (!(obj is StorageKey))
+            {
+                return false;
+            }
+
+            return this.Equals((StorageKey)obj);
         }
 
-        public override int GetHashCode()
-        {
-            return ScriptHash.GetHashCode() + (int)Key.Murmur32(0);
-        }
-
+        public override int GetHashCode() =>
+            this.ScriptHash.GetHashCode() + (int)this.Key.Murmur32(0);
+        
         void ISerializable.Serialize(BinaryWriter writer)
         {
-            writer.Write(ScriptHash);
-            writer.WriteBytesWithGrouping(Key);
+            writer.Write(this.ScriptHash);
+            writer.WriteBytesWithGrouping(this.Key);
         }
     }
 }

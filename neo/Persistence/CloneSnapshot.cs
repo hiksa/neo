@@ -2,25 +2,12 @@
 using Neo.IO.Caching;
 using Neo.IO.Wrappers;
 using Neo.Ledger;
+using Neo.Ledger.States;
 
 namespace Neo.Persistence
 {
     internal class CloneSnapshot : Snapshot
     {
-        public override DataCache<UInt256, BlockState> Blocks { get; }
-        public override DataCache<UInt256, TransactionState> Transactions { get; }
-        public override DataCache<UInt160, AccountState> Accounts { get; }
-        public override DataCache<UInt256, UnspentCoinState> UnspentCoins { get; }
-        public override DataCache<UInt256, SpentCoinState> SpentCoins { get; }
-        public override DataCache<ECPoint, ValidatorState> Validators { get; }
-        public override DataCache<UInt256, AssetState> Assets { get; }
-        public override DataCache<UInt160, ContractState> Contracts { get; }
-        public override DataCache<StorageKey, StorageItem> Storages { get; }
-        public override DataCache<UInt32Wrapper, HeaderHashList> HeaderHashList { get; }
-        public override MetaDataCache<ValidatorsCountState> ValidatorsCount { get; }
-        public override MetaDataCache<HashIndexState> BlockHashIndex { get; }
-        public override MetaDataCache<HashIndexState> HeaderHashIndex { get; }
-
         public CloneSnapshot(Snapshot snapshot)
         {
             this.PersistingBlock = snapshot.PersistingBlock;
@@ -38,5 +25,19 @@ namespace Neo.Persistence
             this.BlockHashIndex = snapshot.BlockHashIndex.CreateSnapshot();
             this.HeaderHashIndex = snapshot.HeaderHashIndex.CreateSnapshot();
         }
+
+        public override DataCache<UInt256, BlockState> Blocks { get; }
+        public override DataCache<UInt256, TransactionState> Transactions { get; }
+        public override DataCache<UInt160, AccountState> Accounts { get; }
+        public override DataCache<UInt256, UnspentCoinState> UnspentCoins { get; }
+        public override DataCache<UInt256, SpentCoinState> SpentCoins { get; }
+        public override DataCache<ECPoint, ValidatorState> Validators { get; }
+        public override DataCache<UInt256, AssetState> Assets { get; }
+        public override DataCache<UInt160, ContractState> Contracts { get; }
+        public override DataCache<StorageKey, StorageItem> Storages { get; }
+        public override DataCache<UInt32Wrapper, HeaderHashList> HeaderHashList { get; }
+        public override MetaDataCache<ValidatorsCountState> ValidatorsCount { get; }
+        public override MetaDataCache<HashIndexState> BlockHashIndex { get; }
+        public override MetaDataCache<HashIndexState> HeaderHashIndex { get; }
     }
 }

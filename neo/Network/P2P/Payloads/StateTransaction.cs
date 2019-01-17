@@ -1,53 +1,77 @@
-﻿using Neo.Cryptography.ECC;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Neo.Cryptography.ECC;
+using Neo.Extensions;
 using Neo.IO;
 using Neo.IO.Json;
 using Neo.Persistence;
 using Neo.SmartContract;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 
 namespace Neo.Network.P2P.Payloads
 {
     public class StateTransaction : Transaction
     {
-        public StateDescriptor[] Descriptors;
-
-        public override int Size => base.Size + Descriptors.GetVarSize();
-        public override Fixed8 SystemFee => Descriptors.Sum(p => p.SystemFee);
-
         public StateTransaction()
             : base(TransactionType.StateTransaction)
         {
         }
 
-        protected override void DeserializeExclusiveData(BinaryReader reader)
+        public StateDescriptor[] Descriptors { get; private set; }
+
+        public override int Size => base.Size + this.Descriptors.GetVarSize();
+
+        public override Fixed8 SystemFee => this.Descriptors.Sum(p => p.SystemFee);
+
+        public override JObject ToJson()
         {
-            Descriptors = reader.ReadSerializableArray<StateDescriptor>(16);
+            var json = base.ToJson();
+            json["descriptors"] = new JArray(this.Descriptors.Select(p => p.ToJson()));
+            return json;
         }
 
+        public override bool Verify(Snapshot snapshot, IEnumerable<Transaction> mempool)
+        {
+            foreach (var stateDescriptor in this.Descriptors)
+            {
+                if (!stateDescriptor.Verify(snapshot))
+                {
+                    return false;
+                }
+            }
+
+            return base.Verify(snapshot, mempool);
+        }
+        
         public override UInt160[] GetScriptHashesForVerifying(Snapshot snapshot)
         {
-            HashSet<UInt160> hashes = new HashSet<UInt160>(base.GetScriptHashesForVerifying(snapshot));
-            foreach (StateDescriptor descriptor in Descriptors)
+            var hashesForVerifying = new HashSet<UInt160>(base.GetScriptHashesForVerifying(snapshot));
+            foreach (var stateDescriptor in this.Descriptors)
             {
-                switch (descriptor.Type)
+                switch (stateDescriptor.Type)
                 {
                     case StateType.Account:
-                        hashes.UnionWith(GetScriptHashesForVerifying_Account(descriptor));
+                        hashesForVerifying.UnionWith(this.GetScriptHashesForVerifyingAccount(stateDescriptor));
                         break;
                     case StateType.Validator:
-                        hashes.UnionWith(GetScriptHashesForVerifying_Validator(descriptor));
+                        hashesForVerifying.UnionWith(this.GetScriptHashesForVerifyingValidator(stateDescriptor));
                         break;
                     default:
                         throw new InvalidOperationException();
                 }
             }
-            return hashes.OrderBy(p => p).ToArray();
+
+            return hashesForVerifying.OrderBy(p => p).ToArray();
         }
 
-        private IEnumerable<UInt160> GetScriptHashesForVerifying_Account(StateDescriptor descriptor)
+        protected override void DeserializeExclusiveData(BinaryReader reader) =>
+            this.Descriptors = reader.ReadSerializableArray<StateDescriptor>(16);
+
+        protected override void SerializeExclusiveData(BinaryWriter writer) =>
+            writer.Write(this.Descriptors);
+
+        private IEnumerable<UInt160> GetScriptHashesForVerifyingAccount(StateDescriptor descriptor)
         {
             switch (descriptor.Field)
             {
@@ -59,36 +83,18 @@ namespace Neo.Network.P2P.Payloads
             }
         }
 
-        private IEnumerable<UInt160> GetScriptHashesForVerifying_Validator(StateDescriptor descriptor)
+        private IEnumerable<UInt160> GetScriptHashesForVerifyingValidator(StateDescriptor descriptor)
         {
             switch (descriptor.Field)
             {
                 case "Registered":
-                    yield return Contract.CreateSignatureRedeemScript(ECPoint.DecodePoint(descriptor.Key, ECCurve.Secp256r1)).ToScriptHash();
+                    var publicKey = ECPoint.DecodePoint(descriptor.Key, ECCurve.Secp256r1);
+                    var validator = Contract.CreateSignatureRedeemScript(publicKey).ToScriptHash();
+                    yield return validator;
                     break;
                 default:
                     throw new InvalidOperationException();
             }
-        }
-
-        protected override void SerializeExclusiveData(BinaryWriter writer)
-        {
-            writer.Write(Descriptors);
-        }
-
-        public override JObject ToJson()
-        {
-            JObject json = base.ToJson();
-            json["descriptors"] = new JArray(Descriptors.Select(p => p.ToJson()));
-            return json;
-        }
-
-        public override bool Verify(Snapshot snapshot, IEnumerable<Transaction> mempool)
-        {
-            foreach (StateDescriptor descriptor in Descriptors)
-                if (!descriptor.Verify(snapshot))
-                    return false;
-            return base.Verify(snapshot, mempool);
         }
     }
 }

@@ -2,12 +2,10 @@
 {
     internal class StorageContext
     {
-        public UInt160 ScriptHash;
-        public bool IsReadOnly;
+        public UInt160 ScriptHash { get; set; }
 
-        public byte[] ToArray()
-        {
-            return ScriptHash.ToArray();
-        }
+        public bool IsReadOnly { get; set; }
+
+        public byte[] ToArray() => this.ScriptHash.ToArray();
     }
 }

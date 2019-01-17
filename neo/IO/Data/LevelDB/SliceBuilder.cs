@@ -14,59 +14,50 @@ namespace Neo.IO.Data.LevelDB
 
         public SliceBuilder Add(byte value)
         {
-            data.Add(value);
+            this.data.Add(value);
             return this;
         }
 
         public SliceBuilder Add(ushort value)
         {
-            data.AddRange(BitConverter.GetBytes(value));
+            this.data.AddRange(BitConverter.GetBytes(value));
             return this;
         }
 
         public SliceBuilder Add(uint value)
         {
-            data.AddRange(BitConverter.GetBytes(value));
+            this.data.AddRange(BitConverter.GetBytes(value));
             return this;
         }
 
         public SliceBuilder Add(long value)
         {
-            data.AddRange(BitConverter.GetBytes(value));
+            this.data.AddRange(BitConverter.GetBytes(value));
             return this;
         }
 
         public SliceBuilder Add(IEnumerable<byte> value)
         {
-            data.AddRange(value);
+            this.data.AddRange(value);
             return this;
         }
 
         public SliceBuilder Add(string value)
         {
-            data.AddRange(Encoding.UTF8.GetBytes(value));
+            this.data.AddRange(Encoding.UTF8.GetBytes(value));
             return this;
         }
 
         public SliceBuilder Add(ISerializable value)
         {
-            data.AddRange(value.ToArray());
+            this.data.AddRange(value.ToArray());
             return this;
         }
 
-        public static SliceBuilder Begin()
-        {
-            return new SliceBuilder();
-        }
+        public static SliceBuilder Begin() => new SliceBuilder();
 
-        public static SliceBuilder Begin(byte prefix)
-        {
-            return new SliceBuilder().Add(prefix);
-        }
+        public static SliceBuilder Begin(byte prefix) => new SliceBuilder().Add(prefix);
 
-        public static implicit operator Slice(SliceBuilder value)
-        {
-            return value.data.ToArray();
-        }
+        public static implicit operator Slice(SliceBuilder value) => value.data.ToArray();
     }
 }

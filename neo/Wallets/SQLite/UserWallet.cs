@@ -1,48 +1,30 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Neo.Cryptography;
-using Neo.IO;
-using Neo.Ledger;
-using Neo.Network.P2P.Payloads;
-using Neo.SmartContract;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security;
 using System.Security.Cryptography;
+using Microsoft.EntityFrameworkCore;
+using Neo.Cryptography;
+using Neo.Extensions;
+using Neo.IO;
+using Neo.Ledger;
+using Neo.Network.P2P.Payloads;
+using Neo.SmartContract;
 
 namespace Neo.Wallets.SQLite
 {
     public class UserWallet : Wallet
     {
-        public override event EventHandler<WalletTransactionEventArgs> WalletTransaction;
-
-        private readonly object db_lock = new object();
+        private readonly object lockObject = new object();
         private readonly WalletIndexer indexer;
         private readonly string path;
         private readonly byte[] iv;
         private readonly byte[] masterKey;
         private readonly Dictionary<UInt160, UserWalletAccount> accounts;
         private readonly Dictionary<UInt256, Transaction> unconfirmed = new Dictionary<UInt256, Transaction>();
-
-        public override string Name => Path.GetFileNameWithoutExtension(path);
-        public override uint WalletHeight => indexer.IndexHeight;
-
-        public override Version Version
-        {
-            get
-            {
-                byte[] buffer = LoadStoredData("Version");
-                if (buffer == null || buffer.Length < 16) return new Version(0, 0);
-                int major = buffer.ToInt32(0);
-                int minor = buffer.ToInt32(4);
-                int build = buffer.ToInt32(8);
-                int revision = buffer.ToInt32(12);
-                return new Version(major, minor, build, revision);
-            }
-        }
-
+        
         private UserWallet(WalletIndexer indexer, string path, byte[] passwordKey, bool create)
         {
             this.indexer = indexer;
@@ -52,136 +34,100 @@ namespace Neo.Wallets.SQLite
                 this.iv = new byte[16];
                 this.masterKey = new byte[32];
                 this.accounts = new Dictionary<UInt160, UserWalletAccount>();
-                using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
+                using (var rng = RandomNumberGenerator.Create())
                 {
-                    rng.GetBytes(iv);
-                    rng.GetBytes(masterKey);
+                    rng.GetBytes(this.iv);
+                    rng.GetBytes(this.masterKey);
                 }
-                Version version = Assembly.GetExecutingAssembly().GetName().Version;
-                BuildDatabase();
-                SaveStoredData("PasswordHash", passwordKey.Sha256());
-                SaveStoredData("IV", iv);
-                SaveStoredData("MasterKey", masterKey.AesEncrypt(passwordKey, iv));
-                SaveStoredData("Version", new[] { version.Major, version.Minor, version.Build, version.Revision }.Select(p => BitConverter.GetBytes(p)).SelectMany(p => p).ToArray());
+
+                var assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version;
+
+                this.BuildDatabase();
+
+                this.SaveStoredData("PasswordHash", passwordKey.Sha256());
+                this.SaveStoredData("IV", this.iv);
+
+                var masterKey = this.masterKey.AesEncrypt(passwordKey, this.iv);
+                this.SaveStoredData("MasterKey", masterKey);
+
+                var version = new[] 
+                    {
+                        assemblyVersion.Major,
+                        assemblyVersion.Minor,
+                        assemblyVersion.Build,
+                        assemblyVersion.Revision
+                    }
+                    .Select(p => BitConverter.GetBytes(p))
+                    .SelectMany(p => p)
+                    .ToArray();
+                this.SaveStoredData("Version", version);
             }
             else
             {
-                byte[] passwordHash = LoadStoredData("PasswordHash");
+                var passwordHash = this.LoadStoredData("PasswordHash");
                 if (passwordHash != null && !passwordHash.SequenceEqual(passwordKey.Sha256()))
+                {
                     throw new CryptographicException();
-                this.iv = LoadStoredData("IV");
-                this.masterKey = LoadStoredData("MasterKey").AesDecrypt(passwordKey, iv);
-                this.accounts = LoadAccounts();
-                indexer.RegisterAccounts(accounts.Keys);
-            }
-            indexer.WalletTransaction += WalletIndexer_WalletTransaction;
-        }
-
-        private void AddAccount(UserWalletAccount account, bool is_import)
-        {
-            lock (accounts)
-            {
-                if (accounts.TryGetValue(account.ScriptHash, out UserWalletAccount account_old))
-                {
-                    if (account.Contract == null)
-                    {
-                        account.Contract = account_old.Contract;
-                    }
                 }
-                else
+
+                this.iv = this.LoadStoredData("IV");
+                this.masterKey = this.LoadStoredData("MasterKey").AesDecrypt(passwordKey, this.iv);
+                this.accounts = this.LoadAccounts();
+                this.indexer.RegisterAccounts(this.accounts.Keys);
+            }
+
+            this.indexer.WalletTransaction += this.WalletIndexerWalletTransaction;
+        }
+
+        public override event EventHandler<WalletTransactionEventArgs> WalletTransaction;
+
+        public override string Name => Path.GetFileNameWithoutExtension(this.path);
+
+        public override uint WalletHeight => this.indexer.IndexHeight;
+
+        public override Version Version
+        {
+            get
+            {
+                var buffer = this.LoadStoredData("Version");
+                if (buffer == null || buffer.Length < 16)
                 {
-                    indexer.RegisterAccounts(new[] { account.ScriptHash }, is_import ? 0 : Blockchain.Singleton.Height);
+                    return new Version(0, 0);
                 }
-                accounts[account.ScriptHash] = account;
-            }
-            lock (db_lock)
-                using (WalletDataContext ctx = new WalletDataContext(path))
-                {
-                    if (account.HasKey)
-                    {
-                        byte[] decryptedPrivateKey = new byte[96];
-                        Buffer.BlockCopy(account.Key.PublicKey.EncodePoint(false), 1, decryptedPrivateKey, 0, 64);
-                        Buffer.BlockCopy(account.Key.PrivateKey, 0, decryptedPrivateKey, 64, 32);
-                        byte[] encryptedPrivateKey = EncryptPrivateKey(decryptedPrivateKey);
-                        Array.Clear(decryptedPrivateKey, 0, decryptedPrivateKey.Length);
-                        Account db_account = ctx.Accounts.FirstOrDefault(p => p.PublicKeyHash.SequenceEqual(account.Key.PublicKeyHash.ToArray()));
-                        if (db_account == null)
-                        {
-                            db_account = ctx.Accounts.Add(new Account
-                            {
-                                PrivateKeyEncrypted = encryptedPrivateKey,
-                                PublicKeyHash = account.Key.PublicKeyHash.ToArray()
-                            }).Entity;
-                        }
-                        else
-                        {
-                            db_account.PrivateKeyEncrypted = encryptedPrivateKey;
-                        }
-                    }
-                    if (account.Contract != null)
-                    {
-                        Contract db_contract = ctx.Contracts.FirstOrDefault(p => p.ScriptHash.SequenceEqual(account.Contract.ScriptHash.ToArray()));
-                        if (db_contract != null)
-                        {
-                            db_contract.PublicKeyHash = account.Key.PublicKeyHash.ToArray();
-                        }
-                        else
-                        {
-                            ctx.Contracts.Add(new Contract
-                            {
-                                RawData = ((VerificationContract)account.Contract).ToArray(),
-                                ScriptHash = account.Contract.ScriptHash.ToArray(),
-                                PublicKeyHash = account.Key.PublicKeyHash.ToArray()
-                            });
-                        }
-                    }
-                    //add address
-                    {
-                        Address db_address = ctx.Addresses.FirstOrDefault(p => p.ScriptHash.SequenceEqual(account.Contract.ScriptHash.ToArray()));
-                        if (db_address == null)
-                        {
-                            ctx.Addresses.Add(new Address
-                            {
-                                ScriptHash = account.Contract.ScriptHash.ToArray()
-                            });
-                        }
-                    }
-                    ctx.SaveChanges();
-                }
-        }
 
-        public override void ApplyTransaction(Transaction tx)
-        {
-            lock (unconfirmed)
-            {
-                unconfirmed[tx.Hash] = tx;
-            }
-            WalletTransaction?.Invoke(this, new WalletTransactionEventArgs
-            {
-                Transaction = tx,
-                RelatedAccounts = tx.Witnesses.Select(p => p.ScriptHash).Union(tx.Outputs.Select(p => p.ScriptHash)).Where(p => Contains(p)).ToArray(),
-                Height = null,
-                Time = DateTime.UtcNow.ToTimestamp()
-            });
-        }
+                var major = buffer.ToInt32(0);
+                var minor = buffer.ToInt32(4);
+                var build = buffer.ToInt32(8);
+                var revision = buffer.ToInt32(12);
 
-        private void BuildDatabase()
-        {
-            using (WalletDataContext ctx = new WalletDataContext(path))
-            {
-                ctx.Database.EnsureDeleted();
-                ctx.Database.EnsureCreated();
+                return new Version(major, minor, build, revision);
             }
         }
 
-        public bool ChangePassword(string password_old, string password_new)
+        public static UserWallet Create(WalletIndexer indexer, string path, string password) =>
+            new UserWallet(indexer, path, password.ToAesKey(), true);
+
+        public static UserWallet Create(WalletIndexer indexer, string path, SecureString password) =>
+            new UserWallet(indexer, path, password.ToAesKey(), true);
+
+        public static UserWallet Open(WalletIndexer indexer, string path, string password) =>
+            new UserWallet(indexer, path, password.ToAesKey(), false);
+
+        public static UserWallet Open(WalletIndexer indexer, string path, SecureString password) =>
+            new UserWallet(indexer, path, password.ToAesKey(), false);
+
+        public bool ChangePassword(string oldPassword, string newPassword)
         {
-            if (!VerifyPassword(password_old)) return false;
-            byte[] passwordKey = password_new.ToAesKey();
+            if (!this.VerifyPassword(oldPassword))
+            {
+                return false;
+            }
+
+            var passwordKey = newPassword.ToAesKey();
             try
             {
-                SaveStoredData("PasswordHash", passwordKey.Sha256());
-                SaveStoredData("MasterKey", masterKey.AesEncrypt(passwordKey, iv));
+                this.SaveStoredData("PasswordHash", passwordKey.Sha256());
+                this.SaveStoredData("MasterKey", this.masterKey.AesEncrypt(passwordKey, this.iv));
                 return true;
             }
             finally
@@ -190,262 +136,266 @@ namespace Neo.Wallets.SQLite
             }
         }
 
+        public override void ApplyTransaction(Transaction tx)
+        {
+            lock (this.unconfirmed)
+            {
+                this.unconfirmed[tx.Hash] = tx;
+            }
+
+            var relatedAccounts = tx.Witnesses
+                .Select(p => p.ScriptHash)
+                .Union(tx.Outputs.Select(p => p.ScriptHash))
+                .Where(p => Contains(p))
+                .ToArray();
+
+            var walletTransactionEventArgs = new WalletTransactionEventArgs
+            {
+                Transaction = tx,
+                RelatedAccounts = relatedAccounts,
+                Height = null,
+                Time = DateTime.UtcNow.ToTimestamp()
+            };
+
+            this.WalletTransaction?.Invoke(this, walletTransactionEventArgs);
+        }
+
         public override bool Contains(UInt160 scriptHash)
         {
-            lock (accounts)
+            lock (this.accounts)
             {
-                return accounts.ContainsKey(scriptHash);
+                return this.accounts.ContainsKey(scriptHash);
             }
         }
-
-        public static UserWallet Create(WalletIndexer indexer, string path, string password)
-        {
-            return new UserWallet(indexer, path, password.ToAesKey(), true);
-        }
-
-        public static UserWallet Create(WalletIndexer indexer, string path, SecureString password)
-        {
-            return new UserWallet(indexer, path, password.ToAesKey(), true);
-        }
-
+        
         public override WalletAccount CreateAccount(byte[] privateKey)
         {
-            KeyPair key = new KeyPair(privateKey);
-            VerificationContract contract = new VerificationContract
+            var key = new KeyPair(privateKey);
+            var contract = new VerificationContract
             {
                 Script = SmartContract.Contract.CreateSignatureRedeemScript(key.PublicKey),
                 ParameterList = new[] { ContractParameterType.Signature }
             };
-            UserWalletAccount account = new UserWalletAccount(contract.ScriptHash)
+
+            var account = new UserWalletAccount(contract.ScriptHash)
             {
                 Key = key,
                 Contract = contract
             };
-            AddAccount(account, false);
+
+            this.AddAccount(account, false);
+
             return account;
         }
 
         public override WalletAccount CreateAccount(SmartContract.Contract contract, KeyPair key = null)
         {
-            VerificationContract verification_contract = contract as VerificationContract;
-            if (verification_contract == null)
+            var verificationContract = contract as VerificationContract;
+            if (verificationContract == null)
             {
-                verification_contract = new VerificationContract
+                verificationContract = new VerificationContract
                 {
                     Script = contract.Script,
                     ParameterList = contract.ParameterList
                 };
             }
-            UserWalletAccount account = new UserWalletAccount(verification_contract.ScriptHash)
+
+            var account = new UserWalletAccount(verificationContract.ScriptHash)
             {
                 Key = key,
-                Contract = verification_contract
+                Contract = verificationContract
             };
-            AddAccount(account, false);
+
+            this.AddAccount(account, false);
             return account;
         }
 
         public override WalletAccount CreateAccount(UInt160 scriptHash)
         {
-            UserWalletAccount account = new UserWalletAccount(scriptHash);
-            AddAccount(account, true);
+            var account = new UserWalletAccount(scriptHash);
+            this.AddAccount(account, true);
             return account;
-        }
-
-        private byte[] DecryptPrivateKey(byte[] encryptedPrivateKey)
-        {
-            if (encryptedPrivateKey == null) throw new ArgumentNullException(nameof(encryptedPrivateKey));
-            if (encryptedPrivateKey.Length != 96) throw new ArgumentException();
-            return encryptedPrivateKey.AesDecrypt(masterKey, iv);
         }
 
         public override bool DeleteAccount(UInt160 scriptHash)
         {
             UserWalletAccount account;
-            lock (accounts)
+            lock (this.accounts)
             {
-                if (accounts.TryGetValue(scriptHash, out account))
-                    accounts.Remove(scriptHash);
+                if (this.accounts.TryGetValue(scriptHash, out account))
+                {
+                    this.accounts.Remove(scriptHash);
+                }
             }
+
             if (account != null)
             {
-                indexer.UnregisterAccounts(new[] { scriptHash });
-                lock (db_lock)
-                    using (WalletDataContext ctx = new WalletDataContext(path))
+                this.indexer.UnregisterAccounts(new[] { scriptHash });
+                lock (this.lockObject)
+                {
+                    using (var ctx = new WalletDataContext(this.path))
                     {
                         if (account.HasKey)
                         {
-                            Account db_account = ctx.Accounts.First(p => p.PublicKeyHash.SequenceEqual(account.Key.PublicKeyHash.ToArray()));
-                            ctx.Accounts.Remove(db_account);
+                            var existingAccount = ctx.Accounts
+                                .First(p => p.PublicKeyHash.SequenceEqual(account.Key.PublicKeyHash.ToArray()));
+
+                            ctx.Accounts.Remove(existingAccount);
                         }
+
                         if (account.Contract != null)
                         {
-                            Contract db_contract = ctx.Contracts.First(p => p.ScriptHash.SequenceEqual(scriptHash.ToArray()));
-                            ctx.Contracts.Remove(db_contract);
+                            var existingContract = ctx.Contracts
+                                .First(p => p.ScriptHash.SequenceEqual(scriptHash.ToArray()));
+
+                            ctx.Contracts.Remove(existingContract);
                         }
-                        //delete address
-                        {
-                            Address db_address = ctx.Addresses.First(p => p.ScriptHash.SequenceEqual(scriptHash.ToArray()));
-                            ctx.Addresses.Remove(db_address);
-                        }
+                        
+                        var existingAddress = ctx.Addresses
+                            .First(p => p.ScriptHash.SequenceEqual(scriptHash.ToArray()));
+
+                        ctx.Addresses.Remove(existingAddress);
                         ctx.SaveChanges();
                     }
+                }
+
                 return true;
             }
+
             return false;
         }
 
-        public override void Dispose()
-        {
-            indexer.WalletTransaction -= WalletIndexer_WalletTransaction;
-        }
+        public override void Dispose() => 
+            this.indexer.WalletTransaction -= this.WalletIndexerWalletTransaction;
 
-        private byte[] EncryptPrivateKey(byte[] decryptedPrivateKey)
+        public override Coin[] FindUnspentCoins(UInt256 assetId, Fixed8 amount, UInt160[] from)
         {
-            return decryptedPrivateKey.AesEncrypt(masterKey, iv);
-        }
+            var unspentCoints = this.FindUnspentCoins(from)
+                .ToArray()
+                .Where(p => this.GetAccount(p.Output.ScriptHash).Contract.Script.IsSignatureContract());
 
-        public override Coin[] FindUnspentCoins(UInt256 asset_id, Fixed8 amount, UInt160[] from)
-        {
-            return FindUnspentCoins(FindUnspentCoins(from).ToArray().Where(p => GetAccount(p.Output.ScriptHash).Contract.Script.IsSignatureContract()), asset_id, amount) ?? base.FindUnspentCoins(asset_id, amount, from);
+            return 
+                Wallet.FindUnspentCoins(unspentCoints, assetId, amount) 
+                ?? base.FindUnspentCoins(assetId, amount, from);
         }
 
         public override WalletAccount GetAccount(UInt160 scriptHash)
         {
-            lock (accounts)
+            lock (this.accounts)
             {
-                accounts.TryGetValue(scriptHash, out UserWalletAccount account);
+                this.accounts.TryGetValue(scriptHash, out UserWalletAccount account);
                 return account;
             }
         }
 
         public override IEnumerable<WalletAccount> GetAccounts()
         {
-            lock (accounts)
+            lock (this.accounts)
             {
-                foreach (UserWalletAccount account in accounts.Values)
+                foreach (var account in this.accounts.Values)
+                {
                     yield return account;
+                }
             }
         }
 
         public override IEnumerable<Coin> GetCoins(IEnumerable<UInt160> accounts)
         {
-            if (unconfirmed.Count == 0)
-                return indexer.GetCoins(accounts);
+            if (this.unconfirmed.Count == 0)
+            {
+                return this.indexer.GetCoins(accounts);
+            }
             else
+            {
                 return GetCoinsInternal();
+            }
+
             IEnumerable<Coin> GetCoinsInternal()
             {
                 HashSet<CoinReference> inputs, claims;
-                Coin[] coins_unconfirmed;
-                lock (unconfirmed)
+                Coin[] unconfirmedCoins;
+                lock (this.unconfirmed)
                 {
-                    inputs = new HashSet<CoinReference>(unconfirmed.Values.SelectMany(p => p.Inputs));
-                    claims = new HashSet<CoinReference>(unconfirmed.Values.OfType<ClaimTransaction>().SelectMany(p => p.Claims));
-                    coins_unconfirmed = unconfirmed.Values.Select(tx => tx.Outputs.Select((o, i) => new Coin
-                    {
-                        Reference = new CoinReference
+                    inputs = new HashSet<CoinReference>(this.unconfirmed.Values.SelectMany(p => p.Inputs));
+                    claims = new HashSet<CoinReference>(this.unconfirmed.Values.OfType<ClaimTransaction>().SelectMany(p => p.Claims));
+                    unconfirmedCoins = this.unconfirmed
+                        .Values
+                        .Select(tx => tx.Outputs.Select((o, i) => new Coin
                         {
-                            PrevHash = tx.Hash,
-                            PrevIndex = (ushort)i
-                        },
-                        Output = o,
-                        State = CoinState.Unconfirmed
-                    })).SelectMany(p => p).ToArray();
+                            Reference = new CoinReference
+                            {
+                                PrevHash = tx.Hash,
+                                PrevIndex = (ushort)i
+                            },
+                            Output = o,
+                            State = CoinStates.Unconfirmed
+                        }))
+                        .SelectMany(p => p)
+                        .ToArray();
                 }
-                foreach (Coin coin in indexer.GetCoins(accounts))
+
+                foreach (var coin in this.indexer.GetCoins(accounts))
                 {
                     if (inputs.Contains(coin.Reference))
                     {
                         if (coin.Output.AssetId.Equals(Blockchain.GoverningToken.Hash))
+                        {
                             yield return new Coin
                             {
                                 Reference = coin.Reference,
                                 Output = coin.Output,
-                                State = coin.State | CoinState.Spent
+                                State = coin.State | CoinStates.Spent
                             };
+                        }
+
                         continue;
                     }
                     else if (claims.Contains(coin.Reference))
                     {
                         continue;
                     }
+
                     yield return coin;
                 }
-                HashSet<UInt160> accounts_set = new HashSet<UInt160>(accounts);
-                foreach (Coin coin in coins_unconfirmed)
+
+                var distinctAccounts = new HashSet<UInt160>(accounts);
+                foreach (var coin in unconfirmedCoins)
                 {
-                    if (accounts_set.Contains(coin.Output.ScriptHash))
+                    if (distinctAccounts.Contains(coin.Output.ScriptHash))
+                    {
                         yield return coin;
+                    }
                 }
             }
         }
 
         public override IEnumerable<UInt256> GetTransactions()
         {
-            foreach (UInt256 hash in indexer.GetTransactions(accounts.Keys))
+            var allTransactions = this.indexer.GetTransactions(this.accounts.Keys);
+            foreach (var hash in allTransactions)
+            {
                 yield return hash;
-            lock (unconfirmed)
+            }
+
+            lock (this.unconfirmed)
             {
-                foreach (UInt256 hash in unconfirmed.Keys)
+                foreach (var hash in this.unconfirmed.Keys)
+                {
                     yield return hash;
-            }
-        }
-
-        private Dictionary<UInt160, UserWalletAccount> LoadAccounts()
-        {
-            using (WalletDataContext ctx = new WalletDataContext(path))
-            {
-                Dictionary<UInt160, UserWalletAccount> accounts = ctx.Addresses.Select(p => p.ScriptHash).AsEnumerable().Select(p => new UserWalletAccount(new UInt160(p))).ToDictionary(p => p.ScriptHash);
-                foreach (Contract db_contract in ctx.Contracts.Include(p => p.Account))
-                {
-                    VerificationContract contract = db_contract.RawData.AsSerializable<VerificationContract>();
-                    UserWalletAccount account = accounts[contract.ScriptHash];
-                    account.Contract = contract;
-                    account.Key = new KeyPair(DecryptPrivateKey(db_contract.Account.PrivateKeyEncrypted));
                 }
-                return accounts;
             }
         }
 
-        private byte[] LoadStoredData(string name)
-        {
-            using (WalletDataContext ctx = new WalletDataContext(path))
-            {
-                return ctx.Keys.FirstOrDefault(p => p.Name == name)?.Value;
-            }
-        }
-
-        public static UserWallet Open(WalletIndexer indexer, string path, string password)
-        {
-            return new UserWallet(indexer, path, password.ToAesKey(), false);
-        }
-
-        public static UserWallet Open(WalletIndexer indexer, string path, SecureString password)
-        {
-            return new UserWallet(indexer, path, password.ToAesKey(), false);
-        }
-
-        private void SaveStoredData(string name, byte[] value)
-        {
-            lock (db_lock)
-                using (WalletDataContext ctx = new WalletDataContext(path))
-                {
-                    SaveStoredData(ctx, name, value);
-                    ctx.SaveChanges();
-                }
-        }
+        public override bool VerifyPassword(string password) =>
+            password.ToAesKey().Sha256().SequenceEqual(this.LoadStoredData("PasswordHash"));
 
         private static void SaveStoredData(WalletDataContext ctx, string name, byte[] value)
         {
-            Key key = ctx.Keys.FirstOrDefault(p => p.Name == name);
+            var key = ctx.Keys.FirstOrDefault(p => p.Name == name);
             if (key == null)
             {
-                ctx.Keys.Add(new Key
-                {
-                    Name = name,
-                    Value = value
-                });
+                key = new Key { Name = name, Value = value };
+                ctx.Keys.Add(key);
             }
             else
             {
@@ -453,31 +403,192 @@ namespace Neo.Wallets.SQLite
             }
         }
 
-        public override bool VerifyPassword(string password)
+        private Dictionary<UInt160, UserWalletAccount> LoadAccounts()
         {
-            return password.ToAesKey().Sha256().SequenceEqual(LoadStoredData("PasswordHash"));
+            using (var ctx = new WalletDataContext(this.path))
+            {
+                var accounts = ctx.Addresses
+                    .Select(p => p.ScriptHash)
+                    .AsEnumerable()
+                    .Select(p => new UserWalletAccount(new UInt160(p)))
+                    .ToDictionary(p => p.ScriptHash);
+
+                var contracts = ctx.Contracts.Include(p => p.Account);
+                foreach (var contract in contracts)
+                {
+                    var verificationContract = contract.RawData.AsSerializable<VerificationContract>();
+                    var account = accounts[verificationContract.ScriptHash];
+                    account.Contract = verificationContract;
+
+                    var decryptedPrivateKey = this.DecryptPrivateKey(contract.Account.PrivateKeyEncrypted);
+                    account.Key = new KeyPair(decryptedPrivateKey);
+                }
+
+                return accounts;
+            }
         }
 
-        private void WalletIndexer_WalletTransaction(object sender, WalletTransactionEventArgs e)
+        private byte[] EncryptPrivateKey(byte[] decryptedPrivateKey) =>
+            decryptedPrivateKey.AesEncrypt(this.masterKey, this.iv);
+
+        private byte[] DecryptPrivateKey(byte[] encryptedPrivateKey)
         {
-            lock (unconfirmed)
+            if (encryptedPrivateKey == null)
             {
-                unconfirmed.Remove(e.Transaction.Hash);
+                throw new ArgumentNullException(nameof(encryptedPrivateKey));
             }
+
+            if (encryptedPrivateKey.Length != 96)
+            {
+                throw new ArgumentException();
+            }
+
+            return encryptedPrivateKey.AesDecrypt(this.masterKey, this.iv);
+        }
+
+        private byte[] LoadStoredData(string name)
+        {
+            using (var ctx = new WalletDataContext(this.path))
+            {
+                return ctx.Keys.FirstOrDefault(p => p.Name == name)?.Value;
+            }
+        }
+
+        private void BuildDatabase()
+        {
+            using (var ctx = new WalletDataContext(this.path))
+            {
+                ctx.Database.EnsureDeleted();
+                ctx.Database.EnsureCreated();
+            }
+        }
+
+        private void SaveStoredData(string name, byte[] value)
+        {
+            lock (this.lockObject)
+            {
+                using (var ctx = new WalletDataContext(this.path))
+                {
+                    UserWallet.SaveStoredData(ctx, name, value);
+                    ctx.SaveChanges();
+                }
+            }
+        }
+
+        private void AddAccount(UserWalletAccount account, bool isImport)
+        {
+            lock (this.accounts)
+            {
+                if (this.accounts.TryGetValue(account.ScriptHash, out UserWalletAccount oldAccount))
+                {
+                    if (account.Contract == null)
+                    {
+                        account.Contract = oldAccount.Contract;
+                    }
+                }
+                else
+                {
+                    var height = isImport ? 0 : Blockchain.Instance.Height;
+                    this.indexer.RegisterAccounts(new[] { account.ScriptHash }, height);
+                }
+
+                this.accounts[account.ScriptHash] = account;
+            }
+
+            lock (this.lockObject)
+            {
+                using (var ctx = new WalletDataContext(this.path))
+                {
+                    if (account.HasKey)
+                    {
+                        var decryptedPrivateKey = new byte[96];
+                        Buffer.BlockCopy(account.Key.PublicKey.EncodePoint(false), 1, decryptedPrivateKey, 0, 64);
+                        Buffer.BlockCopy(account.Key.PrivateKey, 0, decryptedPrivateKey, 64, 32);
+
+                        var encryptedPrivateKey = this.EncryptPrivateKey(decryptedPrivateKey);
+                        Array.Clear(decryptedPrivateKey, 0, decryptedPrivateKey.Length);
+
+                        var accountFromDb = ctx.Accounts
+                            .FirstOrDefault(p => p.PublicKeyHash.SequenceEqual(account.Key.PublicKeyHash.ToArray()));
+
+                        if (accountFromDb == null)
+                        {
+                            var accountToAdd = new Account
+                            {
+                                PrivateKeyEncrypted = encryptedPrivateKey,
+                                PublicKeyHash = account.Key.PublicKeyHash.ToArray()
+                            };
+
+                            accountFromDb = ctx.Accounts.Add(accountToAdd).Entity;
+                        }
+                        else
+                        {
+                            accountFromDb.PrivateKeyEncrypted = encryptedPrivateKey;
+                        }
+                    }
+
+                    if (account.Contract != null)
+                    {
+                        var accountHash = account.Contract.ScriptHash.ToArray();
+                        var contractFromDb = ctx.Contracts.FirstOrDefault(p => p.ScriptHash.SequenceEqual(accountHash));
+                        if (contractFromDb != null)
+                        {
+                            contractFromDb.PublicKeyHash = account.Key.PublicKeyHash.ToArray();
+                        }
+                        else
+                        {
+                            var contractToAdd = new Contract
+                            {
+                                RawData = ((VerificationContract)account.Contract).ToArray(),
+                                ScriptHash = account.Contract.ScriptHash.ToArray(),
+                                PublicKeyHash = account.Key.PublicKeyHash.ToArray()
+                            };
+
+                            ctx.Contracts.Add(contractToAdd);
+                        }
+                    }
+
+                    // add address
+                    {
+                        var addressHash = account.Contract.ScriptHash.ToArray();
+                        var addressFromDb = ctx.Addresses.FirstOrDefault(p => p.ScriptHash.SequenceEqual(addressHash));
+
+                        if (addressFromDb == null)
+                        {
+                            var newAddress = new Address { ScriptHash = addressHash };
+                            ctx.Addresses.Add(newAddress);
+                        }
+                    }
+
+                    ctx.SaveChanges();
+                }
+            }
+        }
+
+        private void WalletIndexerWalletTransaction(object sender, WalletTransactionEventArgs e)
+        {
+            lock (this.unconfirmed)
+            {
+                this.unconfirmed.Remove(e.Transaction.Hash);
+            }
+
             UInt160[] relatedAccounts;
-            lock (accounts)
+            lock (this.accounts)
             {
-                relatedAccounts = e.RelatedAccounts.Where(p => accounts.ContainsKey(p)).ToArray();
+                relatedAccounts = e.RelatedAccounts.Where(p => this.accounts.ContainsKey(p)).ToArray();
             }
+
             if (relatedAccounts.Length > 0)
             {
-                WalletTransaction?.Invoke(this, new WalletTransactionEventArgs
+                var walletTransactionEventArgs = new WalletTransactionEventArgs
                 {
                     Transaction = e.Transaction,
                     RelatedAccounts = relatedAccounts,
                     Height = e.Height,
                     Time = e.Time
-                });
+                };
+
+                this.WalletTransaction?.Invoke(this, walletTransactionEventArgs);
             }
         }
     }

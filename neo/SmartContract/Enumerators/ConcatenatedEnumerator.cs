@@ -15,20 +15,21 @@ namespace Neo.SmartContract.Enumerators
 
         public void Dispose()
         {
-            first.Dispose();
-            second.Dispose();
+            this.first.Dispose();
+            this.second.Dispose();
         }
 
         public bool Next()
         {
-            if (current.Next()) return true;
-            current = second;
-            return current.Next();
+            if (this.current.Next())
+            {
+                return true;
+            }
+
+            this.current = this.second;
+            return this.current.Next();
         }
 
-        public StackItem Value()
-        {
-            return current.Value();
-        }
+        public StackItem Value() => this.current.Value();
     }
 }

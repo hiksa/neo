@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Neo.Ledger;
+using Neo.Ledger.States;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;

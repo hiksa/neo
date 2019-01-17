@@ -1,5 +1,7 @@
-﻿using Neo.IO;
-using System.IO;
+﻿using System.IO;
+using Neo.Extensions;
+using Neo.IO;
+using Neo.Ledger.States;
 
 namespace Neo.Ledger
 {
@@ -8,35 +10,35 @@ namespace Neo.Ledger
         public byte[] Value;
         public bool IsConstant;
 
-        public override int Size => base.Size + Value.GetVarSize() + sizeof(bool);
+        public override int Size => base.Size + this.Value.GetVarSize() + sizeof(bool);
 
-        StorageItem ICloneable<StorageItem>.Clone()
-        {
-            return new StorageItem
+        StorageItem ICloneable<StorageItem>.Clone() =>
+            new StorageItem
             {
-                Value = Value,
-                IsConstant = IsConstant
-            };
-        }
+                Value = this.Value,
+                IsConstant = this.IsConstant
+            };        
 
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            Value = reader.ReadVarBytes();
-            IsConstant = reader.ReadBoolean();
+
+            this.Value = reader.ReadVarBytes();
+            this.IsConstant = reader.ReadBoolean();
         }
 
         void ICloneable<StorageItem>.FromReplica(StorageItem replica)
         {
-            Value = replica.Value;
-            IsConstant = replica.IsConstant;
+            this.Value = replica.Value;
+            this.IsConstant = replica.IsConstant;
         }
 
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
-            writer.WriteVarBytes(Value);
-            writer.Write(IsConstant);
+
+            writer.WriteVarBytes(this.Value);
+            writer.Write(this.IsConstant);
         }
     }
 }

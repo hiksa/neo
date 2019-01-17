@@ -9,52 +9,56 @@ namespace Neo.IO.Caching
         private TrackState State;
         private readonly Func<T> factory;
 
-        protected abstract void AddInternal(T item);
-        protected abstract T TryGetInternal();
-        protected abstract void UpdateInternal(T item);
-
         protected MetaDataCache(Func<T> factory)
         {
             this.factory = factory;
         }
 
+        protected abstract void AddInternal(T item);
+
+        protected abstract T TryGetInternal();
+
+        protected abstract void UpdateInternal(T item);
+
         public void Commit()
         {
-            switch (State)
+            switch (this.State)
             {
                 case TrackState.Added:
-                    AddInternal(Item);
+                    this.AddInternal(this.Item);
                     break;
                 case TrackState.Changed:
-                    UpdateInternal(Item);
+                    this.UpdateInternal(this.Item);
                     break;
             }
         }
 
-        public MetaDataCache<T> CreateSnapshot()
-        {
-            return new CloneMetaCache<T>(this);
-        }
-
+        public MetaDataCache<T> CreateSnapshot() => new CloneMetaCache<T>(this);
+        
         public T Get()
         {
-            if (Item == null)
+            if (this.Item == null)
             {
-                Item = TryGetInternal();
+                this.Item = this.TryGetInternal();
             }
-            if (Item == null)
+
+            if (this.Item == null)
             {
-                Item = factory?.Invoke() ?? new T();
-                State = TrackState.Added;
+                this.Item = this.factory?.Invoke() ?? new T();
+                this.State = TrackState.Added;
             }
-            return Item;
+
+            return this.Item;
         }
 
         public T GetAndChange()
         {
-            T item = Get();
-            if (State == TrackState.None)
-                State = TrackState.Changed;
+            var item = this.Get();
+            if (this.State == TrackState.None)
+            {
+                this.State = TrackState.Changed;
+            }
+
             return item;
         }
     }

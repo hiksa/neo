@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Neo.Ledger;
+using Neo.Ledger.States;
 using System.IO;
 using System.Text;
 
@@ -26,9 +27,9 @@ namespace Neo.UnitTests
         [TestMethod]
         public void Items_Set()
         {
-            CoinState item1 = CoinState.Confirmed;
-            CoinState item2 = CoinState.Spent;
-            CoinState[] val = new CoinState[] { item1, item2 };
+            CoinStates item1 = CoinStates.Confirmed;
+            CoinStates item2 = CoinStates.Spent;
+            CoinStates[] val = new CoinStates[] { item1, item2 };
             uut.Items = val;
             uut.Items.Length.Should().Be(val.Length);
             uut.Items[0].Should().Be(item1);
@@ -38,8 +39,8 @@ namespace Neo.UnitTests
         [TestMethod]
         public void Size_Get_1()
         {
-            CoinState item1 = CoinState.Confirmed;
-            CoinState[] val = new CoinState[] { item1 };
+            CoinStates item1 = CoinStates.Confirmed;
+            CoinStates[] val = new CoinStates[] { item1 };
             uut.Items = val;
 
             uut.Size.Should().Be(3); // 1 + 2
@@ -48,10 +49,10 @@ namespace Neo.UnitTests
         [TestMethod]
         public void Size_Get_3()
         {
-            CoinState item1 = CoinState.Confirmed;
-            CoinState item2 = CoinState.Frozen;
-            CoinState item3 = CoinState.Spent;
-            CoinState[] val = new CoinState[] { item1, item2, item3 };
+            CoinStates item1 = CoinStates.Confirmed;
+            CoinStates item2 = CoinStates.Frozen;
+            CoinStates item3 = CoinStates.Spent;
+            CoinStates[] val = new CoinStates[] { item1, item2, item3 };
             uut.Items = val;
 
             uut.Size.Should().Be(5); // 1 + 4
@@ -70,16 +71,16 @@ namespace Neo.UnitTests
                 }
             }
             uut.Items.Length.Should().Be(2);
-            uut.Items[0].Should().Be(CoinState.Confirmed);
-            uut.Items[1].Should().Be(CoinState.Claimed);
+            uut.Items[0].Should().Be(CoinStates.Confirmed);
+            uut.Items[1].Should().Be(CoinStates.Claimed);
         }
 
         [TestMethod]
         public void Serialize()
         {
-            CoinState item1 = CoinState.Confirmed;
-            CoinState item2 = CoinState.Claimed;
-            CoinState[] val = new CoinState[] { item1, item2 };
+            CoinStates item1 = CoinStates.Confirmed;
+            CoinStates item2 = CoinStates.Claimed;
+            CoinStates[] val = new CoinStates[] { item1, item2 };
             uut.Items = val;
 
             byte[] data;

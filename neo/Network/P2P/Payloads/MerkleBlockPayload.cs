@@ -1,25 +1,30 @@
-﻿using Neo.Cryptography;
-using Neo.IO;
-using System.Collections;
+﻿using System.Collections;
 using System.IO;
 using System.Linq;
+using Neo.Cryptography;
+using Neo.Extensions;
+using Neo.IO;
 
 namespace Neo.Network.P2P.Payloads
 {
     public class MerkleBlockPayload : BlockBase
     {
-        public int TxCount;
-        public UInt256[] Hashes;
-        public byte[] Flags;
+        public int TxCount { get; private set; }
 
-        public override int Size => base.Size + sizeof(int) + Hashes.GetVarSize() + Flags.GetVarSize();
+        public UInt256[] Hashes { get; private set; }
+
+        public byte[] Flags { get; private set; }
+
+        public override int Size => base.Size + sizeof(int) + this.Hashes.GetVarSize() + this.Flags.GetVarSize();
 
         public static MerkleBlockPayload Create(Block block, BitArray flags)
         {
-            MerkleTree tree = new MerkleTree(block.Transactions.Select(p => p.Hash).ToArray());
+            var tree = new MerkleTree(block.Transactions.Select(p => p.Hash).ToArray());
             tree.Trim(flags);
-            byte[] buffer = new byte[(flags.Length + 7) / 8];
+
+            var buffer = new byte[(flags.Length + 7) / 8];
             flags.CopyTo(buffer, 0);
+
             return new MerkleBlockPayload
             {
                 Version = block.Version,
@@ -39,17 +44,19 @@ namespace Neo.Network.P2P.Payloads
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            TxCount = (int)reader.ReadVarInt(int.MaxValue);
-            Hashes = reader.ReadSerializableArray<UInt256>();
-            Flags = reader.ReadVarBytes();
+
+            this.TxCount = (int)reader.ReadVarInt(int.MaxValue);
+            this.Hashes = reader.ReadSerializableArray<UInt256>();
+            this.Flags = reader.ReadVarBytes();
         }
 
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
-            writer.WriteVarInt(TxCount);
-            writer.Write(Hashes);
-            writer.WriteVarBytes(Flags);
+
+            writer.WriteVarInt(this.TxCount);
+            writer.Write(this.Hashes);
+            writer.WriteVarBytes(this.Flags);
         }
     }
 }

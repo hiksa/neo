@@ -1,102 +1,101 @@
-﻿using Neo.Cryptography.ECC;
-using Neo.IO.Json;
-using Neo.Ledger;
-using Neo.Network.P2P.Payloads;
-using Neo.Persistence;
-using Neo.VM;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using Neo.Cryptography.ECC;
+using Neo.IO.Json;
+using Neo.Extensions;
+using Neo.Ledger;
+using Neo.Network.P2P.Payloads;
+using Neo.VM;
 
 namespace Neo.SmartContract
 {
     public class ContractParametersContext
     {
-        private class ContextItem
-        {
-            public byte[] Script;
-            public ContractParameter[] Parameters;
-            public Dictionary<ECPoint, byte[]> Signatures;
-
-            private ContextItem() { }
-
-            public ContextItem(Contract contract)
-            {
-                this.Script = contract.Script;
-                this.Parameters = contract.ParameterList.Select(p => new ContractParameter { Type = p }).ToArray();
-            }
-
-            public static ContextItem FromJson(JObject json)
-            {
-                return new ContextItem
-                {
-                    Script = json["script"]?.AsString().HexToBytes(),
-                    Parameters = ((JArray)json["parameters"]).Select(p => ContractParameter.FromJson(p)).ToArray(),
-                    Signatures = json["signatures"]?.Properties.Select(p => new
-                    {
-                        PublicKey = ECPoint.Parse(p.Key, ECCurve.Secp256r1),
-                        Signature = p.Value.AsString().HexToBytes()
-                    }).ToDictionary(p => p.PublicKey, p => p.Signature)
-                };
-            }
-
-            public JObject ToJson()
-            {
-                JObject json = new JObject();
-                if (Script != null)
-                    json["script"] = Script.ToHexString();
-                json["parameters"] = new JArray(Parameters.Select(p => p.ToJson()));
-                if (Signatures != null)
-                {
-                    json["signatures"] = new JObject();
-                    foreach (var signature in Signatures)
-                        json["signatures"][signature.Key.ToString()] = signature.Value.ToHexString();
-                }
-                return json;
-            }
-        }
-
         public readonly IVerifiable Verifiable;
-        private readonly Dictionary<UInt160, ContextItem> ContextItems;
+
+        private readonly Dictionary<UInt160, ContextItem> contextItems;
+
+        private UInt160[] scriptHashes = null;
+
+        public ContractParametersContext(IVerifiable verifiable)
+        {
+            this.Verifiable = verifiable;
+            this.contextItems = new Dictionary<UInt160, ContextItem>();
+        }
 
         public bool Completed
         {
             get
             {
-                if (ContextItems.Count < ScriptHashes.Count)
+                if (this.contextItems.Count < this.ScriptHashes.Count)
+                {
                     return false;
-                return ContextItems.Values.All(p => p != null && p.Parameters.All(q => q.Value != null));
+                }
+
+                return this.contextItems.Values.All(p => p != null && p.Parameters.All(q => q.Value != null));
             }
         }
 
-        private UInt160[] _ScriptHashes = null;
         public IReadOnlyList<UInt160> ScriptHashes
         {
             get
             {
-                if (_ScriptHashes == null)
-                    using (Snapshot snapshot = Blockchain.Singleton.GetSnapshot())
+                if (this.scriptHashes == null)
+                {
+                    using (var snapshot = Blockchain.Instance.GetSnapshot())
                     {
-                        _ScriptHashes = Verifiable.GetScriptHashesForVerifying(snapshot);
+                        this.scriptHashes = this.Verifiable.GetScriptHashesForVerifying(snapshot);
                     }
-                return _ScriptHashes;
+                }
+
+                return this.scriptHashes;
             }
         }
 
-        public ContractParametersContext(IVerifiable verifiable)
+        public static ContractParametersContext Parse(string value) => FromJson(JObject.Parse(value));
+
+        public static ContractParametersContext FromJson(JObject json)
         {
-            this.Verifiable = verifiable;
-            this.ContextItems = new Dictionary<UInt160, ContextItem>();
+            var verifiable = typeof(ContractParametersContext)
+                .GetTypeInfo()
+                .Assembly
+                .CreateInstance(json["type"].AsString()) as IVerifiable;
+
+            if (verifiable == null)
+            {
+                throw new FormatException();
+            }
+
+            using (var ms = new MemoryStream(json["hex"].AsString().HexToBytes(), false))
+            using (var reader = new BinaryReader(ms, Encoding.UTF8))
+            {
+                verifiable.DeserializeUnsigned(reader);
+            }
+
+            var context = new ContractParametersContext(verifiable);
+            foreach (var property in json["items"].Properties)
+            {
+                var key = UInt160.Parse(property.Key);
+                var value = ContextItem.FromJson(property.Value);
+                context.contextItems.Add(key, value);
+            }
+
+            return context;
         }
 
         public bool Add(Contract contract, int index, object parameter)
         {
-            ContextItem item = CreateItem(contract);
-            if (item == null) return false;
-            item.Parameters[index].Value = parameter;
+            var contextItem = this.CreateItem(contract);
+            if (contextItem == null)
+            {
+                return false;
+            }
+
+            contextItem.Parameters[index].Value = parameter;
             return true;
         }
 
@@ -104,14 +103,22 @@ namespace Neo.SmartContract
         {
             if (contract.Script.IsMultiSigContract())
             {
-                ContextItem item = CreateItem(contract);
-                if (item == null) return false;
-                if (item.Parameters.All(p => p.Value != null)) return false;
-                if (item.Signatures == null)
-                    item.Signatures = new Dictionary<ECPoint, byte[]>();
-                else if (item.Signatures.ContainsKey(pubkey))
+                var contextItem = this.CreateItem(contract);
+                if (contextItem == null || contextItem.Parameters.All(p => p.Value != null))
+                {
                     return false;
-                List<ECPoint> points = new List<ECPoint>();
+                }
+
+                if (contextItem.Signatures == null)
+                {
+                    contextItem.Signatures = new Dictionary<ECPoint, byte[]>();
+                }
+                else if (contextItem.Signatures.ContainsKey(pubkey))
+                {
+                    return false;
+                }
+
+                var points = new List<ECPoint>();
                 {
                     int i = 0;
                     switch (contract.Script[i++])
@@ -123,42 +130,72 @@ namespace Neo.SmartContract
                             i += 2;
                             break;
                     }
+
                     while (contract.Script[i++] == 33)
                     {
-                        points.Add(ECPoint.DecodePoint(contract.Script.Skip(i).Take(33).ToArray(), ECCurve.Secp256r1));
+                        var encodedPoint = contract.Script.Skip(i).Take(33).ToArray();
+                        var point = ECPoint.DecodePoint(encodedPoint, ECCurve.Secp256r1);
+                        points.Add(point);
                         i += 33;
                     }
                 }
-                if (!points.Contains(pubkey)) return false;
-                item.Signatures.Add(pubkey, signature);
-                if (item.Signatures.Count == contract.ParameterList.Length)
+
+                if (!points.Contains(pubkey))
                 {
-                    Dictionary<ECPoint, int> dic = points.Select((p, i) => new
-                    {
-                        PublicKey = p,
-                        Index = i
-                    }).ToDictionary(p => p.PublicKey, p => p.Index);
-                    byte[][] sigs = item.Signatures.Select(p => new
-                    {
-                        Signature = p.Value,
-                        Index = dic[p.Key]
-                    }).OrderByDescending(p => p.Index).Select(p => p.Signature).ToArray();
-                    for (int i = 0; i < sigs.Length; i++)
-                        if (!Add(contract, i, sigs[i]))
-                            throw new InvalidOperationException();
-                    item.Signatures = null;
+                    return false;
                 }
+
+                contextItem.Signatures.Add(pubkey, signature);
+                if (contextItem.Signatures.Count == contract.ParameterList.Length)
+                {
+                    Dictionary<ECPoint, int> dic = points
+                        .Select((p, i) => new
+                        {
+                            PublicKey = p,
+                            Index = i
+                        })
+                        .ToDictionary(p => p.PublicKey, p => p.Index);
+
+                    var signatures = contextItem.Signatures
+                        .Select(p => new
+                        {
+                            Signature = p.Value,
+                            Index = dic[p.Key]
+                        })
+                        .OrderByDescending(p => p.Index)
+                        .Select(p => p.Signature)
+                        .ToArray();
+
+                    for (int i = 0; i < signatures.Length; i++)
+                    {
+                        if (!this.Add(contract, i, signatures[i]))
+                        {
+                            throw new InvalidOperationException();
+                        }
+                    }
+
+                    contextItem.Signatures = null;
+                }
+
                 return true;
             }
             else
             {
                 int index = -1;
                 for (int i = 0; i < contract.ParameterList.Length; i++)
+                {
                     if (contract.ParameterList[i] == ContractParameterType.Signature)
+                    {
                         if (index >= 0)
+                        {
                             throw new NotSupportedException();
+                        }
                         else
+                        {
                             index = i;
+                        }
+                    }
+                }
 
                 if (index == -1)
                 {
@@ -166,98 +203,92 @@ namespace Neo.SmartContract
                     // return now to prevent array index out of bounds exception
                     return false;
                 }
-                return Add(contract, index, signature);
+
+                return this.Add(contract, index, signature);
             }
         }
 
-        private ContextItem CreateItem(Contract contract)
-        {
-            if (ContextItems.TryGetValue(contract.ScriptHash, out ContextItem item))
-                return item;
-            if (!ScriptHashes.Contains(contract.ScriptHash))
-                return null;
-            item = new ContextItem(contract);
-            ContextItems.Add(contract.ScriptHash, item);
-            return item;
-        }
-
-        public static ContractParametersContext FromJson(JObject json)
-        {
-            IVerifiable verifiable = typeof(ContractParametersContext).GetTypeInfo().Assembly.CreateInstance(json["type"].AsString()) as IVerifiable;
-            if (verifiable == null) throw new FormatException();
-            using (MemoryStream ms = new MemoryStream(json["hex"].AsString().HexToBytes(), false))
-            using (BinaryReader reader = new BinaryReader(ms, Encoding.UTF8))
-            {
-                verifiable.DeserializeUnsigned(reader);
-            }
-            ContractParametersContext context = new ContractParametersContext(verifiable);
-            foreach (var property in json["items"].Properties)
-            {
-                context.ContextItems.Add(UInt160.Parse(property.Key), ContextItem.FromJson(property.Value));
-            }
-            return context;
-        }
-
-        public ContractParameter GetParameter(UInt160 scriptHash, int index)
-        {
-            return GetParameters(scriptHash)?[index];
-        }
+        public ContractParameter GetParameter(UInt160 scriptHash, int index) =>
+            this.GetParameters(scriptHash)?[index];
 
         public IReadOnlyList<ContractParameter> GetParameters(UInt160 scriptHash)
         {
-            if (!ContextItems.TryGetValue(scriptHash, out ContextItem item))
+            if (!this.contextItems.TryGetValue(scriptHash, out ContextItem item))
+            {
                 return null;
+            }
+
             return item.Parameters;
         }
 
         public Witness[] GetWitnesses()
         {
-            if (!Completed) throw new InvalidOperationException();
-            Witness[] witnesses = new Witness[ScriptHashes.Count];
-            for (int i = 0; i < ScriptHashes.Count; i++)
+            if (!this.Completed)
             {
-                ContextItem item = ContextItems[ScriptHashes[i]];
-                using (ScriptBuilder sb = new ScriptBuilder())
+                throw new InvalidOperationException();
+            }
+
+            var witnesses = new Witness[this.ScriptHashes.Count];
+            for (int i = 0; i < this.ScriptHashes.Count; i++)
+            {
+                var contextItem = this.contextItems[this.ScriptHashes[i]];
+                using (var sb = new ScriptBuilder())
                 {
-                    foreach (ContractParameter parameter in item.Parameters.Reverse())
+                    foreach (var parameter in contextItem.Parameters.Reverse())
                     {
                         sb.EmitPush(parameter);
                     }
+
                     witnesses[i] = new Witness
                     {
                         InvocationScript = sb.ToArray(),
-                        VerificationScript = item.Script ?? new byte[0]
+                        VerificationScript = contextItem.Script ?? new byte[0]
                     };
                 }
             }
-            return witnesses;
-        }
 
-        public static ContractParametersContext Parse(string value)
-        {
-            return FromJson(JObject.Parse(value));
+            return witnesses;
         }
 
         public JObject ToJson()
         {
-            JObject json = new JObject();
-            json["type"] = Verifiable.GetType().FullName;
-            using (MemoryStream ms = new MemoryStream())
-            using (BinaryWriter writer = new BinaryWriter(ms, Encoding.UTF8))
+            var json = new JObject();
+            json["type"] = this.Verifiable.GetType().FullName;
+
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms, Encoding.UTF8))
             {
-                Verifiable.SerializeUnsigned(writer);
+                this.Verifiable.SerializeUnsigned(writer);
                 writer.Flush();
                 json["hex"] = ms.ToArray().ToHexString();
             }
+
             json["items"] = new JObject();
-            foreach (var item in ContextItems)
+            foreach (var item in this.contextItems)
+            {
                 json["items"][item.Key.ToString()] = item.Value.ToJson();
+            }
+
             return json;
         }
 
-        public override string ToString()
+        public override string ToString() => this.ToJson().ToString();
+
+        private ContextItem CreateItem(Contract contract)
         {
-            return ToJson().ToString();
+            if (this.contextItems.TryGetValue(contract.ScriptHash, out ContextItem item))
+            {
+                return item;
+            }
+
+            if (!this.ScriptHashes.Contains(contract.ScriptHash))
+            {
+                return null;
+            }
+
+            item = new ContextItem(contract);
+            this.contextItems.Add(contract.ScriptHash, item);
+            return item;
         }
     }
 }

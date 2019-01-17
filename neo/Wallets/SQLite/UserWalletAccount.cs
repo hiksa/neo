@@ -2,18 +2,15 @@
 {
     internal class UserWalletAccount : WalletAccount
     {
-        public KeyPair Key;
-
-        public override bool HasKey => Key != null;
-
         public UserWalletAccount(UInt160 scriptHash)
             : base(scriptHash)
         {
         }
 
-        public override KeyPair GetKey()
-        {
-            return Key;
-        }
+        public KeyPair Key { get; set; }
+
+        public override bool HasKey => this.Key != null;
+
+        public override KeyPair GetKey() => this.Key;
     }
 }

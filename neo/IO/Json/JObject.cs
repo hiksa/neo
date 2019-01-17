@@ -10,20 +10,21 @@ namespace Neo.IO.Json
         public static readonly JObject Null = null;
         private Dictionary<string, JObject> properties = new Dictionary<string, JObject>();
 
+        public IReadOnlyDictionary<string, JObject> Properties => this.properties;
+
         public JObject this[string name]
         {
             get
             {
-                properties.TryGetValue(name, out JObject value);
+                this.properties.TryGetValue(name, out JObject value);
                 return value;
             }
+
             set
             {
-                properties[name] = value;
+                this.properties[name] = value;
             }
         }
-
-        public IReadOnlyDictionary<string, JObject> Properties => properties;
 
         public virtual bool AsBoolean()
         {
@@ -32,9 +33,12 @@ namespace Neo.IO.Json
 
         public bool AsBooleanOrDefault(bool value = false)
         {
-            if (!CanConvertTo(typeof(bool)))
+            if (!this.CanConvertTo(typeof(bool)))
+            {
                 return value;
-            return AsBoolean();
+            }
+
+            return this.AsBoolean();
         }
 
         public virtual T AsEnum<T>(bool ignoreCase = false)
@@ -44,9 +48,12 @@ namespace Neo.IO.Json
 
         public T AsEnumOrDefault<T>(T value = default(T), bool ignoreCase = false)
         {
-            if (!CanConvertTo(typeof(T)))
+            if (!this.CanConvertTo(typeof(T)))
+            {
                 return value;
-            return AsEnum<T>(ignoreCase);
+            }
+
+            return this.AsEnum<T>(ignoreCase);
         }
 
         public virtual double AsNumber()
@@ -56,9 +63,12 @@ namespace Neo.IO.Json
 
         public double AsNumberOrDefault(double value = 0)
         {
-            if (!CanConvertTo(typeof(double)))
+            if (!this.CanConvertTo(typeof(double)))
+            {
                 return value;
-            return AsNumber();
+            }
+
+            return this.AsNumber();
         }
 
         public virtual string AsString()
@@ -68,9 +78,12 @@ namespace Neo.IO.Json
 
         public string AsStringOrDefault(string value = null)
         {
-            if (!CanConvertTo(typeof(string)))
+            if (!this.CanConvertTo(typeof(string)))
+            {
                 return value;
-            return AsString();
+            }
+
+            return this.AsString();
         }
 
         public virtual bool CanConvertTo(Type type)
@@ -78,75 +91,95 @@ namespace Neo.IO.Json
             return false;
         }
 
-        public bool ContainsProperty(string key)
-        {
-            return properties.ContainsKey(key);
-        }
+        public bool ContainsProperty(string key) => this.properties.ContainsKey(key);
 
-        public static JObject Parse(TextReader reader, int max_nest = 100)
+        public static JObject Parse(TextReader reader, int maxNestDepth = 100)
         {
-            if (max_nest < 0) throw new FormatException();
-            SkipSpace(reader);
+            if (maxNestDepth < 0)
+            {
+                throw new FormatException();
+            }
+
+            JObject.SkipSpace(reader);
             char firstChar = (char)reader.Peek();
             if (firstChar == '\"' || firstChar == '\'')
             {
                 return JString.Parse(reader);
             }
+
             if (firstChar == '[')
             {
-                return JArray.Parse(reader, max_nest);
+                return JArray.Parse(reader, maxNestDepth);
             }
+
             if ((firstChar >= '0' && firstChar <= '9') || firstChar == '-')
             {
                 return JNumber.Parse(reader);
             }
+
             if (firstChar == 't' || firstChar == 'f')
             {
                 return JBoolean.Parse(reader);
             }
+
             if (firstChar == 'n')
             {
                 return ParseNull(reader);
             }
-            if (reader.Read() != '{') throw new FormatException();
-            SkipSpace(reader);
-            JObject obj = new JObject();
+
+            if (reader.Read() != '{')
+            {
+                throw new FormatException();
+            }
+
+            JObject.SkipSpace(reader);
+            var obj = new JObject();
             while (reader.Peek() != '}')
             {
-                if (reader.Peek() == ',') reader.Read();
-                SkipSpace(reader);
-                string name = JString.Parse(reader).Value;
-                SkipSpace(reader);
-                if (reader.Read() != ':') throw new FormatException();
-                JObject value = Parse(reader, max_nest - 1);
+                if (reader.Peek() == ',')
+                {
+                    reader.Read();
+                }
+
+                JObject.SkipSpace(reader);
+                var name = JString.Parse(reader).Value;
+                JObject.SkipSpace(reader);
+                if (reader.Read() != ':')
+                {
+                    throw new FormatException();
+                }
+
+                var value = Parse(reader, maxNestDepth - 1);
                 obj.properties.Add(name, value);
-                SkipSpace(reader);
+                JObject.SkipSpace(reader);
             }
+
             reader.Read();
             return obj;
         }
 
-        public static JObject Parse(string value, int max_nest = 100)
+        public static JObject Parse(string value, int maxNest = 100)
         {
-            using (StringReader reader = new StringReader(value))
+            using (var reader = new StringReader(value))
             {
-                return Parse(reader, max_nest);
+                return JObject.Parse(reader, maxNest);
             }
         }
 
         private static JObject ParseNull(TextReader reader)
         {
-            char firstChar = (char)reader.Read();
+            var firstChar = (char)reader.Read();
             if (firstChar == 'n')
             {
-                int c2 = reader.Read();
-                int c3 = reader.Read();
-                int c4 = reader.Read();
+                var c2 = reader.Read();
+                var c3 = reader.Read();
+                var c4 = reader.Read();
                 if (c2 == 'u' && c3 == 'l' && c4 == 'l')
                 {
                     return null;
                 }
             }
+
             throw new FormatException();
         }
 
@@ -160,9 +193,9 @@ namespace Neo.IO.Json
 
         public override string ToString()
         {
-            StringBuilder sb = new StringBuilder();
+            var sb = new StringBuilder();
             sb.Append('{');
-            foreach (KeyValuePair<string, JObject> pair in properties)
+            foreach (var pair in this.properties)
             {
                 sb.Append('"');
                 sb.Append(pair.Key);
@@ -176,9 +209,11 @@ namespace Neo.IO.Json
                 {
                     sb.Append(pair.Value);
                 }
+
                 sb.Append(',');
             }
-            if (properties.Count == 0)
+
+            if (this.properties.Count == 0)
             {
                 sb.Append('}');
             }
@@ -186,32 +221,19 @@ namespace Neo.IO.Json
             {
                 sb[sb.Length - 1] = '}';
             }
+
             return sb.ToString();
         }
 
-        public static implicit operator JObject(Enum value)
-        {
-            return new JString(value.ToString());
-        }
+        public static implicit operator JObject(Enum value) => new JString(value.ToString());
 
-        public static implicit operator JObject(JObject[] value)
-        {
-            return new JArray(value);
-        }
+        public static implicit operator JObject(JObject[] value) => new JArray(value);
 
-        public static implicit operator JObject(bool value)
-        {
-            return new JBoolean(value);
-        }
+        public static implicit operator JObject(bool value) => new JBoolean(value);
 
-        public static implicit operator JObject(double value)
-        {
-            return new JNumber(value);
-        }
+        public static implicit operator JObject(double value) => new JNumber(value);
 
-        public static implicit operator JObject(string value)
-        {
-            return value == null ? null : new JString(value);
-        }
+        public static implicit operator JObject(string value) => 
+            value == null ? null : new JString(value);
     }
 }

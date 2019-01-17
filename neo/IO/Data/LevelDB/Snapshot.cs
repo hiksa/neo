@@ -14,10 +14,10 @@ namespace Neo.IO.Data.LevelDB
 
         public void Dispose()
         {
-            if (handle != IntPtr.Zero)
+            if (this.handle != IntPtr.Zero)
             {
-                Native.leveldb_release_snapshot(db, handle);
-                handle = IntPtr.Zero;
+                Native.leveldb_release_snapshot(this.db, this.handle);
+                this.handle = IntPtr.Zero;
             }
         }
     }

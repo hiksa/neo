@@ -1,6 +1,6 @@
-﻿using Neo.Ledger;
-using System;
+﻿using System;
 using System.IO;
+using Neo.Ledger;
 
 namespace Neo.Network.P2P.Payloads
 {
@@ -11,25 +11,30 @@ namespace Neo.Network.P2P.Payloads
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            if (reader.ReadByte() != 0) throw new FormatException();
+            if (reader.ReadByte() != 0)
+            {
+                throw new FormatException();
+            }
         }
 
         public bool Equals(Header other)
         {
-            if (other is null) return false;
-            if (ReferenceEquals(other, this)) return true;
-            return Hash.Equals(other.Hash);
+            if (other is null)
+            {
+                return false;
+            }
+
+            if (object.ReferenceEquals(other, this))
+            {
+                return true;
+            }
+
+            return this.Hash.Equals(other.Hash);
         }
 
-        public override bool Equals(object obj)
-        {
-            return Equals(obj as Header);
-        }
+        public override bool Equals(object obj) => this.Equals(obj as Header);
 
-        public override int GetHashCode()
-        {
-            return Hash.GetHashCode();
-        }
+        public override int GetHashCode() => this.Hash.GetHashCode();
 
         public override void Serialize(BinaryWriter writer)
         {
@@ -41,14 +46,14 @@ namespace Neo.Network.P2P.Payloads
         {
             return new TrimmedBlock
             {
-                Version = Version,
-                PrevHash = PrevHash,
-                MerkleRoot = MerkleRoot,
-                Timestamp = Timestamp,
-                Index = Index,
-                ConsensusData = ConsensusData,
-                NextConsensus = NextConsensus,
-                Witness = Witness,
+                Version = this.Version,
+                PrevHash = this.PrevHash,
+                MerkleRoot = this.MerkleRoot,
+                Timestamp = this.Timestamp,
+                Index = this.Index,
+                ConsensusData = this.ConsensusData,
+                NextConsensus = this.NextConsensus,
+                Witness = this.Witness,
                 Hashes = new UInt256[0]
             };
         }

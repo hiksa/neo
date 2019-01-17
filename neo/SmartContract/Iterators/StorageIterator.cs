@@ -1,6 +1,6 @@
-﻿using Neo.Ledger;
+﻿using System.Collections.Generic;
+using Neo.Ledger;
 using Neo.VM;
-using System.Collections.Generic;
 
 namespace Neo.SmartContract.Iterators
 {
@@ -8,29 +8,15 @@ namespace Neo.SmartContract.Iterators
     {
         private readonly IEnumerator<KeyValuePair<StorageKey, StorageItem>> enumerator;
 
-        public StorageIterator(IEnumerator<KeyValuePair<StorageKey, StorageItem>> enumerator)
-        {
+        public StorageIterator(IEnumerator<KeyValuePair<StorageKey, StorageItem>> enumerator) =>
             this.enumerator = enumerator;
-        }
 
-        public void Dispose()
-        {
-            enumerator.Dispose();
-        }
+        public void Dispose() => this.enumerator.Dispose();
 
-        public StackItem Key()
-        {
-            return enumerator.Current.Key.Key;
-        }
+        public StackItem Key() => this.enumerator.Current.Key.Key;
 
-        public bool Next()
-        {
-            return enumerator.MoveNext();
-        }
+        public bool Next() => this.enumerator.MoveNext();
 
-        public StackItem Value()
-        {
-            return enumerator.Current.Value.Value;
-        }
+        public StackItem Value() => this.enumerator.Current.Value.Value;
     }
 }

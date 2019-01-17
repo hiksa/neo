@@ -4,9 +4,9 @@ namespace Neo.Wallets.NEP6
 {
     public class ScryptParameters
     {
-        public static ScryptParameters Default { get; } = new ScryptParameters(16384, 8, 8);
-
-        public readonly int N, R, P;
+        public readonly int N;
+        public readonly int R;
+        public readonly int P;
 
         public ScryptParameters(int n, int r, int p)
         {
@@ -15,17 +15,20 @@ namespace Neo.Wallets.NEP6
             this.P = p;
         }
 
-        public static ScryptParameters FromJson(JObject json)
-        {
-            return new ScryptParameters((int)json["n"].AsNumber(), (int)json["r"].AsNumber(), (int)json["p"].AsNumber());
-        }
+        public static ScryptParameters Default { get; } = new ScryptParameters(16384, 8, 8);
+
+        public static ScryptParameters FromJson(JObject json) =>
+            new ScryptParameters(
+                (int)json["n"].AsNumber(), 
+                (int)json["r"].AsNumber(), 
+                (int)json["p"].AsNumber());
 
         public JObject ToJson()
         {
-            JObject json = new JObject();
-            json["n"] = N;
-            json["r"] = R;
-            json["p"] = P;
+            var json = new JObject();
+            json["n"] = this.N;
+            json["r"] = this.R;
+            json["p"] = this.P;
             return json;
         }
     }

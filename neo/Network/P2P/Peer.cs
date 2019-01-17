@@ -1,9 +1,4 @@
-﻿using Akka.Actor;
-using Akka.IO;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -13,86 +8,116 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Threading.Tasks;
+using Akka.Actor;
+using Akka.IO;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Neo.Extensions;
 
 namespace Neo.Network.P2P
 {
     public abstract class Peer : UntypedActor
     {
-        public class Start { public int Port; public int WsPort; public int MinDesiredConnections; public int MaxConnections; }
-        public class Peers { public IEnumerable<IPEndPoint> EndPoints; }
-        public class Connect { public IPEndPoint EndPoint; public bool IsTrusted = false; }
-        private class Timer { }
-        private class WsConnected { public WebSocket Socket; public IPEndPoint Remote; public IPEndPoint Local; }
-
-        private const int MaxConnectionsPerAddress = 3;
         public const int DefaultMinDesiredConnections = 10;
         public const int DefaultMaxConnections = DefaultMinDesiredConnections * 4;
-
-        private static readonly IActorRef tcp_manager = Context.System.Tcp();
-        private IActorRef tcp_listener;
-        private IWebHost ws_host;
-        private ICancelable timer;
-        protected ActorSelection Connections => Context.ActorSelection("connection_*");
-
-        private static readonly HashSet<IPAddress> localAddresses = new HashSet<IPAddress>();
-        private readonly Dictionary<IPAddress, int> ConnectedAddresses = new Dictionary<IPAddress, int>();
+        
         protected readonly ConcurrentDictionary<IActorRef, IPEndPoint> ConnectedPeers = new ConcurrentDictionary<IActorRef, IPEndPoint>();
         protected ImmutableHashSet<IPEndPoint> UnconnectedPeers = ImmutableHashSet<IPEndPoint>.Empty;
-        protected ImmutableHashSet<IPEndPoint> ConnectingPeers = ImmutableHashSet<IPEndPoint>.Empty;
+
+        private const int UnconnectedMax = 1000;
+        private const int MaxConnectionsPerAddress = 3;
+
+        private static readonly IActorRef TcpManagerActorRef = Context.System.Tcp();
+        private static readonly HashSet<IPAddress> LocalAddresses = new HashSet<IPAddress>();
+
+        private readonly Dictionary<IPAddress, int> connectedAddresses = new Dictionary<IPAddress, int>();
+
+        private ImmutableHashSet<IPEndPoint> connectingPeers = ImmutableHashSet<IPEndPoint>.Empty;
+
+        private IActorRef tcpListenerActorRef;
+        private IWebHost webSocketHost;
+        private ICancelable timer;
+        
+        static Peer()
+        {
+            IEnumerable<IPAddress> remoteAddresses = NetworkInterface
+                .GetAllNetworkInterfaces()
+                .SelectMany(p => p.GetIPProperties().UnicastAddresses)
+                .Select(p => p.Address.Unmap());
+
+            Peer.LocalAddresses.UnionWith(remoteAddresses);
+        }
+
+        public int ListenerPort { get; private set; }
+
+        public int MinimumDesiredConnections { get; private set; } = DefaultMinDesiredConnections;
+
+        public int MaxConnections { get; private set; } = DefaultMaxConnections;
+
+        protected ActorSelection Connections => Context.ActorSelection("connection_*");
+
         protected HashSet<IPAddress> TrustedIpAddresses { get; } = new HashSet<IPAddress>();
         
-        public int ListenerPort { get; private set; }
-        public int MinDesiredConnections { get; private set; } = DefaultMinDesiredConnections;
-        public int MaxConnections { get; private set; } = DefaultMaxConnections;
-        protected int UnconnectedMax { get; } = 1000;
         protected virtual int ConnectingMax
         {
             get
             {
-                var allowedConnecting = MinDesiredConnections * 4;
-                allowedConnecting = MaxConnections != -1 && allowedConnecting > MaxConnections 
-                    ? MaxConnections : allowedConnecting; 
-                return allowedConnecting - ConnectedPeers.Count;
-            }
-        }
+                var allowedConnecting = this.MinimumDesiredConnections * 4;
+                allowedConnecting = this.MaxConnections != -1 && allowedConnecting > this.MaxConnections
+                    ? this.MaxConnections
+                    : allowedConnecting;
 
-        static Peer()
-        {
-            localAddresses.UnionWith(NetworkInterface.GetAllNetworkInterfaces().SelectMany(p => p.GetIPProperties().UnicastAddresses).Select(p => p.Address.Unmap()));
+                return allowedConnecting - this.ConnectedPeers.Count;
+            }
         }
 
         protected void AddPeers(IEnumerable<IPEndPoint> peers)
         {
-            if (UnconnectedPeers.Count < UnconnectedMax)
+            if (this.UnconnectedPeers.Count < UnconnectedMax)
             {
-                peers = peers.Where(p => p.Port != ListenerPort || !localAddresses.Contains(p.Address));
-                ImmutableInterlocked.Update(ref UnconnectedPeers, p => p.Union(peers));
+                peers = peers.Where(p => p.Port != this.ListenerPort || !Peer.LocalAddresses.Contains(p.Address));
+                ImmutableInterlocked.Update(ref this.UnconnectedPeers, p => p.Union(peers));
             }
         }
 
         protected void ConnectToPeer(IPEndPoint endPoint, bool isTrusted = false)
         {
             endPoint = endPoint.Unmap();
-            if (endPoint.Port == ListenerPort && localAddresses.Contains(endPoint.Address)) return;
-
-            if (isTrusted) TrustedIpAddresses.Add(endPoint.Address);
-            if (ConnectedAddresses.TryGetValue(endPoint.Address, out int count) && count >= MaxConnectionsPerAddress)
-                return;
-            if (ConnectedPeers.Values.Contains(endPoint)) return;
-            ImmutableInterlocked.Update(ref ConnectingPeers, p =>
+            if (endPoint.Port == this.ListenerPort 
+                && Peer.LocalAddresses.Contains(endPoint.Address))
             {
-                if ((p.Count >= ConnectingMax && !isTrusted) || p.Contains(endPoint)) return p;
-                tcp_manager.Tell(new Tcp.Connect(endPoint));
-                return p.Add(endPoint);
-            });
-        }
+                return;
+            }
 
-        private static bool IsIntranetAddress(IPAddress address)
-        {
-            byte[] data = address.MapToIPv4().GetAddressBytes();
-            Array.Reverse(data);
-            uint value = data.ToUInt32(0);
-            return (value & 0xff000000) == 0x0a000000 || (value & 0xff000000) == 0x7f000000 || (value & 0xfff00000) == 0xac100000 || (value & 0xffff0000) == 0xc0a80000 || (value & 0xffff0000) == 0xa9fe0000;
+            if (isTrusted)
+            {
+                this.TrustedIpAddresses.Add(endPoint.Address);
+            }
+
+            if (this.connectedAddresses.TryGetValue(endPoint.Address, out int count) 
+                && count >= Peer.MaxConnectionsPerAddress)
+            {
+                return;
+            }
+
+            if (this.ConnectedPeers.Values.Contains(endPoint))
+            {
+                return;
+            }
+
+            ImmutableInterlocked.Update(
+                ref this.connectingPeers, 
+                p =>
+                {
+                    if ((p.Count >= ConnectingMax && !isTrusted) || p.Contains(endPoint))
+                    {
+                        return p;
+                    }
+
+                    Peer.TcpManagerActorRef.Tell(new Tcp.Connect(endPoint));
+                    return p.Add(endPoint);
+                });
         }
 
         protected abstract void NeedMorePeers(int count);
@@ -102,87 +127,149 @@ namespace Neo.Network.P2P
             switch (message)
             {
                 case Start start:
-                    OnStart(start.Port, start.WsPort, start.MinDesiredConnections, start.MaxConnections);
+                    this.OnStart(
+                        start.Port, 
+                        start.WebSocketPort, 
+                        start.MinDesiredConnections, 
+                        start.MaxConnections);
                     break;
                 case Timer _:
-                    OnTimer();
+                    this.OnTimer();
                     break;
                 case Peers peers:
-                    AddPeers(peers.EndPoints);
+                    this.AddPeers(peers.EndPoints);
                     break;
                 case Connect connect:
-                    ConnectToPeer(connect.EndPoint, connect.IsTrusted);
+                    this.ConnectToPeer(connect.EndPoint, connect.IsTrusted);
                     break;
                 case WsConnected ws:
-                    OnWsConnected(ws.Socket, ws.Remote, ws.Local);
+                    this.OnWsConnected(ws.Socket, ws.Remote, ws.Local);
                     break;
                 case Tcp.Connected connected:
-                    OnTcpConnected(((IPEndPoint)connected.RemoteAddress).Unmap(), ((IPEndPoint)connected.LocalAddress).Unmap());
+                    var remote = ((IPEndPoint)connected.RemoteAddress).Unmap();
+                    var local = ((IPEndPoint)connected.LocalAddress).Unmap();
+                    this.OnTcpConnected(remote, local);
                     break;
                 case Tcp.Bound _:
-                    tcp_listener = Sender;
+                    this.tcpListenerActorRef = this.Sender;
                     break;
                 case Tcp.CommandFailed commandFailed:
-                    OnTcpCommandFailed(commandFailed.Cmd);
+                    this.OnTcpCommandFailed(commandFailed.Cmd);
                     break;
                 case Terminated terminated:
-                    OnTerminated(terminated.ActorRef);
+                    this.OnTerminated(terminated.ActorRef);
                     break;
             }
         }
 
-        private void OnStart(int port, int wsPort, int minDesiredConnections, int maxConnections)
+        protected override void PostStop()
         {
-            ListenerPort = port;
-            MinDesiredConnections = minDesiredConnections;
-            MaxConnections = maxConnections;
-            timer = Context.System.Scheduler.ScheduleTellRepeatedlyCancelable(0, 5000, Context.Self, new Timer(), ActorRefs.NoSender);
-            if ((port > 0 || wsPort > 0)
-                && localAddresses.All(p => !p.IsIPv4MappedToIPv6 || IsIntranetAddress(p))
+            this.timer.CancelIfNotNull();
+            this.webSocketHost?.Dispose();
+            this.tcpListenerActorRef?.Tell(Tcp.Unbind.Instance);
+
+            base.PostStop();
+        }
+
+        protected abstract Props ProtocolProps(object connection, IPEndPoint remote, IPEndPoint local);
+
+        private static bool IsIntranetAddress(IPAddress address)
+        {
+            var data = address.MapToIPv4().GetAddressBytes();
+            Array.Reverse(data);
+            var value = data.ToUInt32(0);
+
+            var isIntranetAddress = (value & 0xff000000) == 0x0a000000 
+                || (value & 0xff000000) == 0x7f000000 
+                || (value & 0xfff00000) == 0xac100000 
+                || (value & 0xffff0000) == 0xc0a80000 
+                || (value & 0xffff0000) == 0xa9fe0000;
+
+            return isIntranetAddress;
+        }
+
+        private void OnStart(int port, int webSocketPort, int minDesiredConnections, int maxConnections)
+        {
+            this.ListenerPort = port;
+            this.MinimumDesiredConnections = minDesiredConnections;
+            this.MaxConnections = maxConnections;
+            this.timer = Context.System.Scheduler.ScheduleTellRepeatedlyCancelable(
+                initialMillisecondsDelay: 0, 
+                millisecondsInterval: 5000, 
+                receiver: Context.Self, 
+                message: new Timer(), 
+                sender: ActorRefs.NoSender);
+
+            if ((port > 0 || webSocketPort > 0)
+                && Peer.LocalAddresses.All(p => !p.IsIPv4MappedToIPv6 || Peer.IsIntranetAddress(p))
                 && UPnP.Discover())
             {
                 try
                 {
-                    localAddresses.Add(UPnP.GetExternalIP());
+                    Peer.LocalAddresses.Add(UPnP.GetExternalIP());
                     if (port > 0)
+                    {
                         UPnP.ForwardPort(port, ProtocolType.Tcp, "NEO");
-                    if (wsPort > 0)
-                        UPnP.ForwardPort(wsPort, ProtocolType.Tcp, "NEO WebSocket");
+                    }
+
+                    if (webSocketPort > 0)
+                    {
+                        UPnP.ForwardPort(webSocketPort, ProtocolType.Tcp, "NEO WebSocket");
+                    }
                 }
-                catch { }
+                catch
+                {
+                }
             }
+
             if (port > 0)
             {
-                tcp_manager.Tell(new Tcp.Bind(Self, new IPEndPoint(IPAddress.Any, port), options: new[] { new Inet.SO.ReuseAddress(true) }));
+                var tcpBindMessage = new Tcp.Bind(
+                    handler: this.Self, 
+                    localAddress: new IPEndPoint(IPAddress.Any, port), 
+                    options: new[] { new Inet.SO.ReuseAddress(true) });
+
+                TcpManagerActorRef.Tell(tcpBindMessage);
             }
-            if (wsPort > 0)
+
+            if (webSocketPort > 0)
             {
-                ws_host = new WebHostBuilder().UseKestrel().UseUrls($"http://*:{wsPort}").Configure(app => app.UseWebSockets().Run(ProcessWebSocketAsync)).Build();
-                ws_host.Start();
+                this.webSocketHost = new WebHostBuilder()
+                    .UseKestrel()
+                    .UseUrls($"http://*:{webSocketPort}")
+                    .Configure(app => app.UseWebSockets()
+                    .Run(this.ProcessWebSocketAsync))
+                    .Build();
+
+                this.webSocketHost.Start();
             }
         }
 
         private void OnTcpConnected(IPEndPoint remote, IPEndPoint local)
         {
-            ImmutableInterlocked.Update(ref ConnectingPeers, p => p.Remove(remote));
-            if (MaxConnections != -1 && ConnectedPeers.Count >= MaxConnections && !TrustedIpAddresses.Contains(remote.Address))
+            ImmutableInterlocked.Update(ref this.connectingPeers, p => p.Remove(remote));
+            if (this.MaxConnections != -1 
+                && this.ConnectedPeers.Count >= this.MaxConnections 
+                && !this.TrustedIpAddresses.Contains(remote.Address))
             {
-                Sender.Tell(Tcp.Abort.Instance);
+                this.Sender.Tell(Tcp.Abort.Instance);
                 return;
             }
-            
-            ConnectedAddresses.TryGetValue(remote.Address, out int count);
+
+            this.connectedAddresses.TryGetValue(remote.Address, out int count);
             if (count >= MaxConnectionsPerAddress)
             {
-                Sender.Tell(Tcp.Abort.Instance);
+                this.Sender.Tell(Tcp.Abort.Instance);
             }
             else
             {
-                ConnectedAddresses[remote.Address] = count + 1;
-                IActorRef connection = Context.ActorOf(ProtocolProps(Sender, remote, local), $"connection_{Guid.NewGuid()}");
-                Context.Watch(connection);
-                Sender.Tell(new Tcp.Register(connection));
-                ConnectedPeers.TryAdd(connection, remote);
+                this.connectedAddresses[remote.Address] = count + 1;
+                var connectionProps = this.ProtocolProps(this.Sender, remote, local);
+                var connection = Context.ActorOf(connectionProps, $"connection_{Guid.NewGuid()}");
+                UntypedActor.Context.Watch(connection);
+
+                this.Sender.Tell(new Tcp.Register(connection));
+                this.ConnectedPeers.TryAdd(connection, remote);
             }
         }
 
@@ -191,71 +278,145 @@ namespace Neo.Network.P2P
             switch (cmd)
             {
                 case Tcp.Connect connect:
-                    ImmutableInterlocked.Update(ref ConnectingPeers, p => p.Remove(((IPEndPoint)connect.RemoteAddress).Unmap()));
+                    ImmutableInterlocked.Update(
+                        ref this.connectingPeers, 
+                        p => p.Remove(((IPEndPoint)connect.RemoteAddress).Unmap()));
                     break;
             }
         }
 
         private void OnTerminated(IActorRef actorRef)
         {
-            if (ConnectedPeers.TryRemove(actorRef, out IPEndPoint endPoint))
+            if (this.ConnectedPeers.TryRemove(actorRef, out IPEndPoint endPoint))
             {
-                ConnectedAddresses.TryGetValue(endPoint.Address, out int count);
-                if (count > 0) count--;
+                this.connectedAddresses.TryGetValue(endPoint.Address, out int count);
+                if (count > 0)
+                {
+                    count--;
+                }
+
                 if (count == 0)
-                    ConnectedAddresses.Remove(endPoint.Address);
+                {
+                    this.connectedAddresses.Remove(endPoint.Address);
+                }
                 else
-                    ConnectedAddresses[endPoint.Address] = count;
+                {
+                    this.connectedAddresses[endPoint.Address] = count;
+                }
             }
         }
 
         private void OnTimer()
         {
-            if (ConnectedPeers.Count >= MinDesiredConnections) return;
-            if (UnconnectedPeers.Count == 0)
-                NeedMorePeers(MinDesiredConnections - ConnectedPeers.Count);
-            IPEndPoint[] endpoints = UnconnectedPeers.Take(MinDesiredConnections - ConnectedPeers.Count).ToArray();
-            ImmutableInterlocked.Update(ref UnconnectedPeers, p => p.Except(endpoints));
-            foreach (IPEndPoint endpoint in endpoints)
+            if (this.ConnectedPeers.Count >= this.MinimumDesiredConnections)
             {
-                ConnectToPeer(endpoint);
+                return;
+            }
+
+            if (this.UnconnectedPeers.Count == 0)
+            {
+                this.NeedMorePeers(this.MinimumDesiredConnections - this.ConnectedPeers.Count);
+            }
+
+            var endpoints = this.UnconnectedPeers
+                .Take(this.MinimumDesiredConnections - this.ConnectedPeers.Count)
+                .ToArray();
+
+            ImmutableInterlocked.Update(ref this.UnconnectedPeers, p => p.Except(endpoints));
+            foreach (var endpoint in endpoints)
+            {
+                this.ConnectToPeer(endpoint);
             }
         }
 
         private void OnWsConnected(WebSocket ws, IPEndPoint remote, IPEndPoint local)
         {
-            ConnectedAddresses.TryGetValue(remote.Address, out int count);
+            this.connectedAddresses.TryGetValue(remote.Address, out int count);
             if (count >= MaxConnectionsPerAddress)
             {
                 ws.Abort();
             }
             else
             {
-                ConnectedAddresses[remote.Address] = count + 1;
-                Context.ActorOf(ProtocolProps(ws, remote, local), $"connection_{Guid.NewGuid()}");
+                this.connectedAddresses[remote.Address] = count + 1;
+                UntypedActor.Context.ActorOf(this.ProtocolProps(ws, remote, local), $"connection_{Guid.NewGuid()}");
             }
-        }
-
-        protected override void PostStop()
-        {
-            timer.CancelIfNotNull();
-            ws_host?.Dispose();
-            tcp_listener?.Tell(Tcp.Unbind.Instance);
-            base.PostStop();
         }
 
         private async Task ProcessWebSocketAsync(HttpContext context)
         {
-            if (!context.WebSockets.IsWebSocketRequest) return;
-            WebSocket ws = await context.WebSockets.AcceptWebSocketAsync();
-            Self.Tell(new WsConnected
+            if (!context.WebSockets.IsWebSocketRequest)
             {
-                Socket = ws,
-                Remote = new IPEndPoint(context.Connection.RemoteIpAddress, context.Connection.RemotePort),
-                Local = new IPEndPoint(context.Connection.LocalIpAddress, context.Connection.LocalPort)
-            });
+                return;
+            }
+
+            var ws = await context.WebSockets.AcceptWebSocketAsync();
+            var remote = new IPEndPoint(context.Connection.RemoteIpAddress, context.Connection.RemotePort);
+            var local = new IPEndPoint(context.Connection.LocalIpAddress, context.Connection.LocalPort);
+
+            base.Self.Tell(new WsConnected(ws, remote, local));
+        }
+        
+        public class Start
+        {
+            public Start(int port, int webSocketPort, int minDesiredConnections, int maxConnections)
+            {
+                this.Port = port;
+                this.WebSocketPort = webSocketPort;
+                this.MinDesiredConnections = minDesiredConnections;
+                this.MaxConnections = maxConnections;
+            }
+
+            public int Port { get; private set; }
+
+            public int MaxConnections { get; private set; }
+
+            public int MinDesiredConnections { get; private set; }
+
+            public int WebSocketPort { get; private set; }
         }
 
-        protected abstract Props ProtocolProps(object connection, IPEndPoint remote, IPEndPoint local);
+        public class Peers
+        {
+            public Peers(IEnumerable<IPEndPoint> endpoints)
+            {
+                this.EndPoints = endpoints;
+            }
+
+            public IEnumerable<IPEndPoint> EndPoints { get; private set; }
+        }
+
+        public class Connect
+        {
+            public Connect(IPEndPoint endPoint, bool isTrusted = false)
+            {
+                this.EndPoint = endPoint;
+                this.IsTrusted = isTrusted;
+            }
+
+            public IPEndPoint EndPoint { get; private set; }
+
+            public bool IsTrusted { get; private set; }
+        }
+
+        private class Timer
+        {
+        }
+
+        private class WsConnected
+        {
+            public WsConnected(WebSocket socket, IPEndPoint remote, IPEndPoint local)
+            {
+                this.Socket = socket;
+                this.Remote = remote;
+                this.Local = local;
+            }
+
+            public IPEndPoint Local { get; private set; }
+
+            public WebSocket Socket { get; private set; }
+
+            public IPEndPoint Remote { get; private set; }
+        }
     }
 }

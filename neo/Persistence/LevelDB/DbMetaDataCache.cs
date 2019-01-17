@@ -1,7 +1,8 @@
-﻿using Neo.IO;
+﻿using System;
+using Neo.Extensions;
+using Neo.IO;
 using Neo.IO.Caching;
 using Neo.IO.Data.LevelDB;
-using System;
 
 namespace Neo.Persistence.LevelDB
 {
@@ -22,21 +23,20 @@ namespace Neo.Persistence.LevelDB
             this.prefix = prefix;
         }
 
-        protected override void AddInternal(T item)
-        {
-            batch?.Put(prefix, item.ToArray());
-        }
+        protected override void AddInternal(T item) =>
+            this.batch?.Put(this.prefix, item.ToArray());
 
         protected override T TryGetInternal()
         {
-            if (!db.TryGet(options, prefix, out Slice slice))
+            if (!this.db.TryGet(this.options, this.prefix, out Slice slice))
+            {
                 return null;
+            }
+
             return slice.ToArray().AsSerializable<T>();
         }
 
-        protected override void UpdateInternal(T item)
-        {
-            batch?.Put(prefix, item.ToArray());
-        }
+        protected override void UpdateInternal(T item) =>
+            this.batch?.Put(this.prefix, item.ToArray());
     }
 }

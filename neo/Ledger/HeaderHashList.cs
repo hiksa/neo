@@ -1,7 +1,9 @@
-﻿using Neo.IO;
-using Neo.IO.Json;
-using System.IO;
+﻿using System.IO;
 using System.Linq;
+using Neo.Extensions;
+using Neo.IO;
+using Neo.IO.Json;
+using Neo.Ledger.States;
 
 namespace Neo.Ledger
 {
@@ -9,37 +11,31 @@ namespace Neo.Ledger
     {
         public UInt256[] Hashes;
 
-        public override int Size => base.Size + Hashes.GetVarSize();
+        public override int Size => base.Size + this.Hashes.GetVarSize();
 
-        HeaderHashList ICloneable<HeaderHashList>.Clone()
-        {
-            return new HeaderHashList
-            {
-                Hashes = Hashes
-            };
-        }
+        HeaderHashList ICloneable<HeaderHashList>.Clone() => new HeaderHashList { Hashes = this.Hashes };
 
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            Hashes = reader.ReadSerializableArray<UInt256>();
+            this.Hashes = reader.ReadSerializableArray<UInt256>();
         }
 
         void ICloneable<HeaderHashList>.FromReplica(HeaderHashList replica)
         {
-            Hashes = replica.Hashes;
+            this.Hashes = replica.Hashes;
         }
 
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
-            writer.Write(Hashes);
+            writer.Write(this.Hashes);
         }
 
         public override JObject ToJson()
         {
-            JObject json = base.ToJson();
-            json["hashes"] = Hashes.Select(p => (JObject)p.ToString()).ToArray();
+            var json = base.ToJson();
+            json["hashes"] = this.Hashes.Select(p => (JObject)p.ToString()).ToArray();
             return json;
         }
     }

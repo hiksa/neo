@@ -10,41 +10,47 @@ namespace Neo.IO.Caching
         /// <summary>
         /// Constructor
         /// </summary>
-        public ReflectionCache() { }
+        public ReflectionCache()
+        { }
+
         /// <summary>
         /// Constructor
         /// </summary>
         /// <typeparam name="EnumType">Enum type</typeparam>
-        public static ReflectionCache<T> CreateFromEnum<EnumType>() where EnumType : struct, IConvertible
+        public static ReflectionCache<T> CreateFromEnum<EnumType>() 
+            where EnumType : struct, IConvertible
         {
-            Type enumType = typeof(EnumType);
-
+            var enumType = typeof(EnumType);
             if (!enumType.GetTypeInfo().IsEnum)
-                throw new ArgumentException("K must be an enumerated type");
-
-            // Cache all types
-            ReflectionCache<T> r = new ReflectionCache<T>();
-
-            foreach (object t in Enum.GetValues(enumType))
             {
-                // Get enumn member
-                MemberInfo[] memInfo = enumType.GetMember(t.ToString());
-                if (memInfo == null || memInfo.Length != 1)
-                    throw (new FormatException());
+                throw new ArgumentException("K must be an enumerated type");
+            }
 
-                // Get attribute
-                ReflectionCacheAttribute attribute = memInfo[0].GetCustomAttributes(typeof(ReflectionCacheAttribute), false)
+            var cache = new ReflectionCache<T>();
+            foreach (var t in Enum.GetValues(enumType))
+            {
+                var memberInfo = enumType.GetMember(t.ToString());
+                if (memberInfo == null || memberInfo.Length != 1)
+                {
+                    throw new FormatException();
+                }
+
+                var attribute = memberInfo[0]
+                    .GetCustomAttributes(typeof(ReflectionCacheAttribute), false)
                     .Cast<ReflectionCacheAttribute>()
                     .FirstOrDefault();
 
                 if (attribute == null)
-                    throw (new FormatException());
+                {
+                    throw new FormatException();
+                }
 
-                // Append to cache
-                r.Add((T)t, attribute.Type);
+                cache.Add((T)t, attribute.Type);
             }
-            return r;
+
+            return cache;
         }
+
         /// <summary>
         /// Create object from key
         /// </summary>
@@ -52,14 +58,14 @@ namespace Neo.IO.Caching
         /// <param name="def">Default value</param>
         public object CreateInstance(T key, object def = null)
         {
-            Type tp;
+            if (this.TryGetValue(key, out Type tp))
+            {
+                return Activator.CreateInstance(tp);
+            }
 
-            // Get Type from cache
-            if (TryGetValue(key, out tp)) return Activator.CreateInstance(tp);
-
-            // return null
             return def;
         }
+
         /// <summary>
         /// Create object from key
         /// </summary>
@@ -68,12 +74,11 @@ namespace Neo.IO.Caching
         /// <param name="def">Default value</param>
         public K CreateInstance<K>(T key, K def = default(K))
         {
-            Type tp;
+            if (this.TryGetValue(key, out Type tp))
+            {
+                return (K)Activator.CreateInstance(tp);
+            }
 
-            // Get Type from cache
-            if (TryGetValue(key, out tp)) return (K)Activator.CreateInstance(tp);
-
-            // return null
             return def;
         }
     }

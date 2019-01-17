@@ -14,64 +14,64 @@ namespace Neo.IO.Data.LevelDB
         private void CheckError()
         {
             IntPtr error;
-            Native.leveldb_iter_get_error(handle, out error);
+            Native.leveldb_iter_get_error(this.handle, out error);
             NativeHelper.CheckError(error);
         }
 
         public void Dispose()
         {
-            if (handle != IntPtr.Zero)
+            if (this.handle != IntPtr.Zero)
             {
-                Native.leveldb_iter_destroy(handle);
-                handle = IntPtr.Zero;
+                Native.leveldb_iter_destroy(this.handle);
+                this.handle = IntPtr.Zero;
             }
         }
 
         public Slice Key()
         {
             UIntPtr length;
-            IntPtr key = Native.leveldb_iter_key(handle, out length);
-            CheckError();
+            IntPtr key = Native.leveldb_iter_key(this.handle, out length);
+            this.CheckError();
             return new Slice(key, length);
         }
 
         public void Next()
         {
-            Native.leveldb_iter_next(handle);
-            CheckError();
+            Native.leveldb_iter_next(this.handle);
+            this.CheckError();
         }
 
         public void Prev()
         {
-            Native.leveldb_iter_prev(handle);
-            CheckError();
+            Native.leveldb_iter_prev(this.handle);
+            this.CheckError();
         }
 
         public void Seek(Slice target)
         {
-            Native.leveldb_iter_seek(handle, target.buffer, (UIntPtr)target.buffer.Length);
+            Native.leveldb_iter_seek(this.handle, target.buffer, (UIntPtr)target.buffer.Length);
         }
 
         public void SeekToFirst()
         {
-            Native.leveldb_iter_seek_to_first(handle);
+            Native.leveldb_iter_seek_to_first(this.handle);
         }
 
         public void SeekToLast()
         {
-            Native.leveldb_iter_seek_to_last(handle);
+            Native.leveldb_iter_seek_to_last(this.handle);
         }
 
         public bool Valid()
         {
-            return Native.leveldb_iter_valid(handle);
+            return Native.leveldb_iter_valid(this.handle);
         }
 
         public Slice Value()
         {
             UIntPtr length;
-            IntPtr value = Native.leveldb_iter_value(handle, out length);
-            CheckError();
+            IntPtr value = Native.leveldb_iter_value(this.handle, out length);
+            this.CheckError();
             return new Slice(value, length);
         }
     }

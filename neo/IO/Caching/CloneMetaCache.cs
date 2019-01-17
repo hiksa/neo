@@ -15,14 +15,9 @@
         {
         }
 
-        protected override T TryGetInternal()
-        {
-            return innerCache.Get().Clone();
-        }
+        protected override T TryGetInternal() => this.innerCache.Get().Clone();        
 
-        protected override void UpdateInternal(T item)
-        {
-            innerCache.GetAndChange().FromReplica(item);
-        }
+        protected override void UpdateInternal(T item) =>
+            this.innerCache.GetAndChange().FromReplica(item);        
     }
 }

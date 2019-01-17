@@ -1,89 +1,87 @@
-﻿using Neo.Cryptography.ECC;
-using Neo.VM;
-using Neo.Wallets;
-using System;
+﻿using System;
 using System.Linq;
+using Neo.Cryptography.ECC;
+using Neo.Extensions;
+using Neo.VM;
 
 namespace Neo.SmartContract
 {
     public class Contract
     {
-        public byte[] Script;
-        public ContractParameterType[] ParameterList;
+        private string address;
+        private UInt160 scriptHash;
 
-        private string _address;
+        public byte[] Script { get; set; }
+
+        public ContractParameterType[] ParameterList { get; set; }
+
         public string Address
         {
             get
             {
-                if (_address == null)
+                if (this.address == null)
                 {
-                    _address = ScriptHash.ToAddress();
+                    this.address = this.ScriptHash.ToAddress();
                 }
-                return _address;
+
+                return this.address;
             }
         }
 
-        private UInt160 _scriptHash;
         public virtual UInt160 ScriptHash
         {
             get
             {
-                if (_scriptHash == null)
+                if (this.scriptHash == null)
                 {
-                    _scriptHash = Script.ToScriptHash();
+                    this.scriptHash = this.Script.ToScriptHash();
                 }
-                return _scriptHash;
+
+                return this.scriptHash;
             }
         }
 
-        public static Contract Create(ContractParameterType[] parameterList, byte[] redeemScript)
-        {
-            return new Contract
-            {
-                Script = redeemScript,
-                ParameterList = parameterList
-            };
-        }
+        public static Contract Create(ContractParameterType[] parameterList, byte[] redeemScript) =>
+            new Contract { Script = redeemScript, ParameterList = parameterList };
 
-        public static Contract CreateMultiSigContract(int m, params ECPoint[] publicKeys)
-        {
-            return new Contract
+        public static Contract CreateMultiSigContract(int m, params ECPoint[] publicKeys) =>
+            new Contract
             {
-                Script = CreateMultiSigRedeemScript(m, publicKeys),
+                Script = Contract.CreateMultiSigRedeemScript(m, publicKeys),
                 ParameterList = Enumerable.Repeat(ContractParameterType.Signature, m).ToArray()
             };
-        }
 
         public static byte[] CreateMultiSigRedeemScript(int m, params ECPoint[] publicKeys)
         {
-            if (!(1 <= m && m <= publicKeys.Length && publicKeys.Length <= 1024))
+            if (!(m >= 1 && m <= publicKeys.Length && publicKeys.Length <= 1024))
+            {
                 throw new ArgumentException();
-            using (ScriptBuilder sb = new ScriptBuilder())
+            }
+
+            using (var sb = new ScriptBuilder())
             {
                 sb.EmitPush(m);
-                foreach (ECPoint publicKey in publicKeys.OrderBy(p => p))
+                foreach (var publicKey in publicKeys.OrderBy(p => p))
                 {
                     sb.EmitPush(publicKey.EncodePoint(true));
                 }
+
                 sb.EmitPush(publicKeys.Length);
                 sb.Emit(OpCode.CHECKMULTISIG);
                 return sb.ToArray();
             }
         }
 
-        public static Contract CreateSignatureContract(ECPoint publicKey)
-        {
-            return new Contract
+        public static Contract CreateSignatureContract(ECPoint publicKey) =>
+            new Contract
             {
-                Script = CreateSignatureRedeemScript(publicKey),
+                Script = Contract.CreateSignatureRedeemScript(publicKey),
                 ParameterList = new[] { ContractParameterType.Signature }
             };
-        }
 
         public static byte[] CreateSignatureRedeemScript(ECPoint publicKey)
         {
-            using (ScriptBuilder sb = new ScriptBuilder())
+            using (var sb = new ScriptBuilder())
             {
                 sb.EmitPush(publicKey.EncodePoint(true));
                 sb.Emit(OpCode.CHECKSIG);

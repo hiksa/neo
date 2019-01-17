@@ -11,46 +11,67 @@ namespace Neo.Cryptography
 
         public static byte[] Decode(string input)
         {
-            BigInteger bi = BigInteger.Zero;
+            var decoded = BigInteger.Zero;
             for (int i = input.Length - 1; i >= 0; i--)
             {
                 int index = Alphabet.IndexOf(input[i]);
                 if (index == -1)
-                    throw new FormatException();
-                bi += index * BigInteger.Pow(58, input.Length - 1 - i);
+                {
+                    throw new FormatException("Not a valid base58 input");
+                }
+
+                decoded += index * BigInteger.Pow(58, input.Length - 1 - i);
             }
-            byte[] bytes = bi.ToByteArray();
+
+            var bytes = decoded.ToByteArray();
             Array.Reverse(bytes);
-            bool stripSignByte = bytes.Length > 1 && bytes[0] == 0 && bytes[1] >= 0x80;
-            int leadingZeros = 0;
-            for (int i = 0; i < input.Length && input[i] == Alphabet[0]; i++)
-            {
-                leadingZeros++;
-            }
-            byte[] tmp = new byte[bytes.Length - (stripSignByte ? 1 : 0) + leadingZeros];
-            Array.Copy(bytes, stripSignByte ? 1 : 0, tmp, leadingZeros, tmp.Length - leadingZeros);
-            return tmp;
+
+            var shouldStripSignByte = bytes.Length > 1 && bytes[0] == 0 && bytes[1] >= 0x80;
+            var leadingZeros = GetLeadingZeros(input);
+
+            var resultLength = bytes.Length - (shouldStripSignByte ? 1 : 0) + leadingZeros;
+            var result = new byte[resultLength];
+            Array.Copy(bytes, shouldStripSignByte ? 1 : 0, result, leadingZeros, result.Length - leadingZeros);
+
+            return result;
         }
 
         public static string Encode(byte[] input)
         {
-            BigInteger value = new BigInteger(new byte[1].Concat(input).Reverse().ToArray());
-            StringBuilder sb = new StringBuilder();
+            var value = new BigInteger(new byte[1].Concat(input).Reverse().ToArray());
+            var sb = new StringBuilder();
             while (value >= 58)
             {
-                BigInteger mod = value % 58;
-                sb.Insert(0, Alphabet[(int)mod]);
+                var mod = value % 58;
+                sb.Insert(0, Base58.Alphabet[(int)mod]);
                 value /= 58;
             }
-            sb.Insert(0, Alphabet[(int)value]);
-            foreach (byte b in input)
+
+            sb.Insert(0, Base58.Alphabet[(int)value]);
+            foreach (var b in input)
             {
                 if (b == 0)
-                    sb.Insert(0, Alphabet[0]);
+                {
+                    sb.Insert(0, Base58.Alphabet[0]);
+                }
                 else
+                {
                     break;
+                }
             }
+
             return sb.ToString();
+        }
+
+        private static int GetLeadingZeros(string input)
+        {
+            var leadingZeros = 0;
+            for (int i = 0; i < input.Length && input[i] == Base58.Alphabet[0]; i++)
+            {
+                leadingZeros++;
+            }
+
+            return leadingZeros;
         }
     }
 }

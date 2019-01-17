@@ -1,68 +1,91 @@
-﻿using Neo.IO;
-using Neo.IO.Json;
-using Neo.Persistence;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using Neo.Extensions;
+using Neo.IO;
+using Neo.IO.Json;
+using Neo.Persistence;
 
 namespace Neo.Network.P2P.Payloads
 {
     public class InvocationTransaction : Transaction
     {
-        public byte[] Script;
-        public Fixed8 Gas;
-
-        public override int Size => base.Size + Script.GetVarSize();
-
-        public override Fixed8 SystemFee => Gas;
-
         public InvocationTransaction()
             : base(TransactionType.InvocationTransaction)
         {
         }
 
-        protected override void DeserializeExclusiveData(BinaryReader reader)
-        {
-            if (Version > 1) throw new FormatException();
-            Script = reader.ReadVarBytes(65536);
-            if (Script.Length == 0) throw new FormatException();
-            if (Version >= 1)
-            {
-                Gas = reader.ReadSerializable<Fixed8>();
-                if (Gas < Fixed8.Zero) throw new FormatException();
-            }
-            else
-            {
-                Gas = Fixed8.Zero;
-            }
-        }
+        public byte[] Script { get; set; }
+
+        public Fixed8 Gas { get; set; }
+
+        public override int Size => base.Size + this.Script.GetVarSize();
+
+        public override Fixed8 SystemFee => this.Gas;
 
         public static Fixed8 GetGas(Fixed8 consumed)
         {
-            Fixed8 gas = consumed - Fixed8.FromDecimal(10);
-            if (gas <= Fixed8.Zero) return Fixed8.Zero;
-            return gas.Ceiling();
-        }
+            var gas = consumed - Fixed8.FromDecimal(10);
+            if (gas <= Fixed8.Zero)
+            {
+                return Fixed8.Zero;
+            }
 
-        protected override void SerializeExclusiveData(BinaryWriter writer)
-        {
-            writer.WriteVarBytes(Script);
-            if (Version >= 1)
-                writer.Write(Gas);
+            return gas.Ceiling();
         }
 
         public override JObject ToJson()
         {
-            JObject json = base.ToJson();
-            json["script"] = Script.ToHexString();
-            json["gas"] = Gas.ToString();
+            var json = base.ToJson();
+            json["script"] = this.Script.ToHexString();
+            json["gas"] = this.Gas.ToString();
             return json;
         }
 
         public override bool Verify(Snapshot snapshot, IEnumerable<Transaction> mempool)
         {
-            if (Gas.GetData() % 100000000 != 0) return false;
+            if (this.Gas.GetData() % 100_000_000 != 0)
+            {
+                return false;
+            }
+
             return base.Verify(snapshot, mempool);
+        }
+        
+        protected override void DeserializeExclusiveData(BinaryReader reader)
+        {
+            if (this.Version > 1)
+            {
+                throw new FormatException();
+            }
+
+            this.Script = reader.ReadVarBytes(65536);
+            if (this.Script.Length == 0)
+            {
+                throw new FormatException();
+            }
+
+            if (this.Version >= 1)
+            {
+                this.Gas = reader.ReadSerializable<Fixed8>();
+                if (this.Gas < Fixed8.Zero)
+                {
+                    throw new FormatException();
+                }
+            }
+            else
+            {
+                this.Gas = Fixed8.Zero;
+            }
+        }
+
+        protected override void SerializeExclusiveData(BinaryWriter writer)
+        {
+            writer.WriteVarBytes(this.Script);
+            if (this.Version >= 1)
+            {
+                writer.Write(this.Gas);
+            }
         }
     }
 }
