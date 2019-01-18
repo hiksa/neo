@@ -954,7 +954,7 @@ namespace Neo.SmartContract
                 .Pop()
                 .GetBigInteger();
 
-            var contractProperties = (ContractPropertyState)(byte)engine.CurrentContext
+            var contractProperties = (ContractPropertyStates)(byte)engine.CurrentContext
                 .EvaluationStack
                 .Pop()
                 .GetBigInteger();
@@ -1051,7 +1051,7 @@ namespace Neo.SmartContract
                 .Pop()
                 .GetBigInteger();
 
-            var contractProperties = (ContractPropertyState)(byte)engine.CurrentContext
+            var contractProperties = (ContractPropertyStates)(byte)engine.CurrentContext
                 .EvaluationStack
                 .Pop()
                 .GetBigInteger();

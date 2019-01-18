@@ -245,6 +245,7 @@ namespace Neo.Wallets
 
                         groupId = WalletIndexer.GetGroupId();
                         var key = SliceBuilder.Begin(DataEntryPrefix.IXGroup).Add(height);
+
                         batch.Put(key, groupId);
                     }
                     else
@@ -364,6 +365,7 @@ namespace Neo.Wallets
                         var key = SliceBuilder.Begin(DataEntryPrefix.STCoin).Add(reference);
                         var value = SliceBuilder.Begin().Add(output).Add((byte)coin.State);
                         batch.Put(key, value);
+
                         changedAccounts.Add(output.ScriptHash);
                     }
                 }
@@ -378,7 +380,6 @@ namespace Neo.Wallets
 
                             var key = SliceBuilder.Begin(DataEntryPrefix.STCoin).Add(input);
                             var value = SliceBuilder.Begin().Add(coin.Output).Add((byte)coin.State);
-
                             batch.Put(key, value);
                         }
                         else
@@ -408,6 +409,7 @@ namespace Neo.Wallets
                                 this.trackedAccounts[coin.Output.ScriptHash].Remove(claim);
                                 this.trackedCoins.Remove(claim);
                                 batch.Delete(DataEntryPrefix.STCoin, claim);
+
                                 changedAccounts.Add(coin.Output.ScriptHash);
                             }
                         }

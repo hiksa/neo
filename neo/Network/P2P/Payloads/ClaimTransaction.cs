@@ -26,6 +26,7 @@ namespace Neo.Network.P2P.Payloads
         public override UInt160[] GetScriptHashesForVerifying(Snapshot snapshot)
         {
             var hashesForVerifying = new HashSet<UInt160>(base.GetScriptHashesForVerifying(snapshot));
+
             foreach (var group in this.Claims.GroupBy(p => p.PrevHash))
             {
                 var tx = snapshot.GetTransaction(group.Key);
@@ -67,12 +68,14 @@ namespace Neo.Network.P2P.Payloads
                 return false;
             }
 
-            if (mempool
+            var thereAreClaims = mempool
                 .OfType<ClaimTransaction>()
                 .Where(p => p != this)
                 .SelectMany(p => p.Claims)
                 .Intersect(this.Claims)
-                .Any())
+                .Any();
+
+            if (thereAreClaims == false)
             {
                 return false;
             }

@@ -35,9 +35,10 @@ namespace Neo.Network.P2P.Payloads
 
         public override UInt160[] GetScriptHashesForVerifying(Snapshot snapshot)
         {
-            var hashes = new HashSet<UInt160>(base.GetScriptHashesForVerifying(snapshot));
-            var transactionResultsForVerifying = this.GetTransactionResults().Where(p => p.Amount < Fixed8.Zero);
-            foreach (var result in transactionResultsForVerifying)
+            var hashesForVerifying = new HashSet<UInt160>(base.GetScriptHashesForVerifying(snapshot));
+            var txResultsForVerifying = this.GetTransactionResults().Where(p => p.Amount < Fixed8.Zero);
+
+            foreach (var result in txResultsForVerifying)
             {
                 var asset = snapshot.Assets.TryGet(result.AssetId);
                 if (asset == null)
@@ -45,10 +46,10 @@ namespace Neo.Network.P2P.Payloads
                     throw new InvalidOperationException();
                 }
 
-                hashes.Add(asset.Issuer);
+                hashesForVerifying.Add(asset.Issuer);
             }
 
-            return hashes.OrderBy(p => p).ToArray();
+            return hashesForVerifying.OrderBy(p => p).ToArray();
         }
 
         public override bool Verify(Snapshot snapshot, IEnumerable<Transaction> mempool)
@@ -58,7 +59,10 @@ namespace Neo.Network.P2P.Payloads
                 return false;
             }
 
-            var results = this.GetTransactionResults()?.Where(p => p.Amount < Fixed8.Zero).ToArray();
+            var results = this.GetTransactionResults()
+                ?.Where(p => p.Amount < Fixed8.Zero)
+                .ToArray();
+
             if (results == null)
             {
                 return false;
@@ -77,16 +81,16 @@ namespace Neo.Network.P2P.Payloads
                     continue;
                 }
 
-                var quantityIssued = mempool
+                var issuedQuantity = mempool
                     .OfType<IssueTransaction>()
                     .Where(p => p != this)
                     .SelectMany(p => p.Outputs)
                     .Where(p => p.AssetId == result.AssetId)
                     .Sum(p => p.Value);
 
-                quantityIssued += assetState.Available;
+                issuedQuantity += assetState.Available;
 
-                if (assetState.Amount - quantityIssued < -result.Amount)
+                if (assetState.Amount - issuedQuantity < -result.Amount)
                 {
                     return false;
                 }

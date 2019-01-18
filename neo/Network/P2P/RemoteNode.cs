@@ -35,7 +35,6 @@ namespace Neo.Network.P2P
                 LocalNode.Nonce, 
                 LocalNode.UserAgent, 
                 Blockchain.Instance.Height);
-
             var versionMessage = Message.Create("version", versionPayload);
             this.SendMessage(versionMessage);
         }
@@ -69,6 +68,7 @@ namespace Neo.Network.P2P
         protected override void OnReceive(object message)
         {
             base.OnReceive(message);
+
             switch (message)
             {
                 case Message msg:

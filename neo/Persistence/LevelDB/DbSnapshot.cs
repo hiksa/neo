@@ -54,6 +54,7 @@ namespace Neo.Persistence.LevelDB
         public override void Commit()
         {
             base.Commit();
+
             this.db.Write(WriteOptions.Default, this.batch);
         }
 

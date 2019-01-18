@@ -315,7 +315,8 @@ namespace Neo.Network.P2P.Payloads
                 return false;
             }
 
-            foreach (var group in this.Outputs.GroupBy(p => p.AssetId))
+            var outputGroups = this.Outputs.GroupBy(p => p.AssetId);
+            foreach (var group in outputGroups)
             {
                 var assetState = snapshot.Assets.TryGet(group.Key);
                 if (assetState == null)

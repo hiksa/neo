@@ -14,7 +14,7 @@ namespace Neo.Extensions
         public static string ToHexString(this IEnumerable<byte> value)
         {
             var sb = new StringBuilder();
-            foreach (byte b in value)
+            foreach (var b in value)
             {
                 sb.AppendFormat("{0:x2}", b);
             }

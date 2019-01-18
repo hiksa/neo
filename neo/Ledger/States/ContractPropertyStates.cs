@@ -3,7 +3,7 @@
 namespace Neo.Ledger.States
 {
     [Flags]
-    public enum ContractPropertyState : byte
+    public enum ContractPropertyStates : byte
     {
         NoProperty = 0,
 

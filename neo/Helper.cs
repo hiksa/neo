@@ -30,19 +30,19 @@ namespace Neo
                 return 0;
             }
 
-            var b = new byte[(sizeInBits / 8) + 1];
-            rand.NextBytes(b);
+            var bytes = new byte[(sizeInBits / 8) + 1];
+            rand.NextBytes(bytes);
 
             if (sizeInBits % 8 == 0)
             {
-                b[b.Length - 1] = 0;
+                bytes[bytes.Length - 1] = 0;
             }
             else
             {
-                b[b.Length - 1] &= (byte)((1 << (sizeInBits % 8)) - 1);
+                bytes[bytes.Length - 1] &= (byte)((1 << (sizeInBits % 8)) - 1);
             }
 
-            return new BigInteger(b);
+            return new BigInteger(bytes);
         }
 
         internal static BigInteger NextBigInteger(this RandomNumberGenerator rng, int sizeInBits)
@@ -59,6 +59,7 @@ namespace Neo
 
             var bytes = new byte[(sizeInBits / 8) + 1];
             rng.GetBytes(bytes);
+
             if (sizeInBits % 8 == 0)
             {
                 bytes[bytes.Length - 1] = 0;

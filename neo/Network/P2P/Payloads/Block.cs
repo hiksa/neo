@@ -65,7 +65,9 @@ namespace Neo.Network.P2P.Payloads
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
+
             this.Transactions = new Transaction[reader.ReadVarInt(0x10000)];
+
             if (this.Transactions.Length == 0)
             {
                 throw new FormatException();

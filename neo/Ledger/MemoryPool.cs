@@ -126,7 +126,8 @@ namespace Neo.Ledger
             }
             else
             {
-                var delete = pool.AsParallel()
+                var hashesToRemove = pool
+                    .AsParallel()
                     .OrderBy(p => p.Value.Transaction.NetworkFee / p.Value.Transaction.Size)
                     .ThenBy(p => p.Value.Transaction.NetworkFee)
                     .ThenBy(p => new BigInteger(p.Key.ToArray()))
@@ -134,7 +135,7 @@ namespace Neo.Ledger
                     .Select(p => p.Key)
                     .ToArray();
 
-                foreach (var hash in delete)
+                foreach (var hash in hashesToRemove)
                 {
                     pool.TryRemove(hash, out _);
                 }

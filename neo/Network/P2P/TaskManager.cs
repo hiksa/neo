@@ -227,8 +227,8 @@ namespace Neo.Network.P2P
             {
                 foreach (var task in session.Tasks.ToArray())
                 {
-                    if (DateTime.UtcNow - task.Value > TaskManager.TaskTimeout 
-                        && session.Tasks.Remove(task.Key))
+                    var elapsedTime = DateTime.UtcNow - task.Value;
+                    if (elapsedTime > TaskManager.TaskTimeout && session.Tasks.Remove(task.Key))
                     {
                         this.DecrementGlobalTask(task.Key);                        
                     }
@@ -252,6 +252,7 @@ namespace Neo.Network.P2P
             {
                 session.AvailableTasks.ExceptWith(this.knownHashes);
                 session.AvailableTasks.RemoveWhere(p => Blockchain.Instance.ContainsBlock(p));
+
                 var hashes = new HashSet<UInt256>(session.AvailableTasks);
                 if (hashes.Count > 0)
                 {

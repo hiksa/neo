@@ -164,6 +164,7 @@ namespace Neo.Cryptography.ECC
             var expectedLength = (curve.Q.GetBitLength() + 7) / 8;
             var buffer = new byte[1 + (expectedLength * 2)];
             buffer[0] = reader.ReadByte();
+
             switch (buffer[0])
             {
                 case 0x00:
@@ -191,10 +192,22 @@ namespace Neo.Cryptography.ECC
                     return ECPoint.DecodePoint(pubkey, curve);
                 case 64:
                 case 72:
-                    return ECPoint.DecodePoint(new byte[] { 0x04 }.Concat(pubkey.Skip(pubkey.Length - 64)).ToArray(), curve);
+                    {
+                        var encoded = new byte[] { 0x04 }
+                            .Concat(pubkey.Skip(pubkey.Length - 64))
+                            .ToArray();
+
+                        return ECPoint.DecodePoint(encoded, curve);
+                    }
                 case 96:
                 case 104:
-                    return ECPoint.DecodePoint(new byte[] { 0x04 }.Concat(pubkey.Skip(pubkey.Length - 96).Take(64)).ToArray(), curve);
+                    {
+                        var encoded = new byte[] { 0x04 }
+                            .Concat(pubkey.Skip(pubkey.Length - 96).Take(64))
+                            .ToArray();
+
+                        return ECPoint.DecodePoint(encoded, curve);
+                    }
                 default:
                     throw new FormatException("Invalid public key.");
             }
@@ -204,7 +217,7 @@ namespace Neo.Cryptography.ECC
         {
             try
             {
-                point = Parse(value, curve);
+                point = ECPoint.Parse(value, curve);
                 return true;
             }
             catch (FormatException)
@@ -255,6 +268,7 @@ namespace Neo.Cryptography.ECC
             else
             {
                 data = new byte[65];
+
                 var yBytes = this.y.Value.ToByteArray().Reverse().ToArray();
 
                 Buffer.BlockCopy(yBytes, 0, data, 65 - yBytes.Length, yBytes.Length);

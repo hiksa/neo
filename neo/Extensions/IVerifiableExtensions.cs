@@ -14,8 +14,8 @@ namespace Neo.Extensions
     {
         public static byte[] GetHashData(this IVerifiable verifiable)
         {
-            using (MemoryStream ms = new MemoryStream())
-            using (BinaryWriter writer = new BinaryWriter(ms))
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
             {
                 verifiable.SerializeUnsigned(writer);
                 writer.Flush();
@@ -74,6 +74,7 @@ namespace Neo.Extensions
                 {
                     engine.LoadScript(verification);
                     engine.LoadScript(verifiable.Witnesses[i].InvocationScript);
+
                     if (!engine.Execute())
                     {
                         return false;

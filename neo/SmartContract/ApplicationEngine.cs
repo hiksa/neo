@@ -107,6 +107,7 @@ namespace Neo.SmartContract
             var engine = new ApplicationEngine(TriggerType.Application, container, snapshot, extraGAS, testMode);
             engine.LoadScript(script);
             engine.Execute();
+
             return engine;
         }
 
@@ -146,7 +147,7 @@ namespace Neo.SmartContract
                     }
 
                     this.StepInto();
-                    if (this.State.HasOneOrMoreFlags(VMState.HALT, VMState.FAULT))
+                    if (this.State.HasAnyFlags(VMState.HALT, VMState.FAULT))
                     {
                         break;
                     }
@@ -240,7 +241,7 @@ namespace Neo.SmartContract
                     .GetString(this.CurrentContext.Script, this.CurrentContext.InstructionPointer + 2, length)
                     .ToInteropMethodHash();
 
-            long price = this.Service.GetPrice(apiHash);
+            var price = this.Service.GetPrice(apiHash);
             if (price > 0)
             {
                 return price;
@@ -264,17 +265,17 @@ namespace Neo.SmartContract
                 || apiHash == "AntShares.Contract.Migrate".ToInteropMethodHash())
             {
                 var fee = 100L;
-                var contractProperties = (ContractPropertyState)(byte)this.CurrentContext
+                var contractProperties = (ContractPropertyStates)(byte)this.CurrentContext
                     .EvaluationStack
                     .Peek(3)
                     .GetBigInteger();
 
-                if (contractProperties.HasFlag(ContractPropertyState.HasStorage))
+                if (contractProperties.HasFlag(ContractPropertyStates.HasStorage))
                 {
                     fee += 400L;
                 }
 
-                if (contractProperties.HasFlag(ContractPropertyState.HasDynamicInvoke))
+                if (contractProperties.HasFlag(ContractPropertyStates.HasDynamicInvoke))
                 {
                     fee += 500L;
                 }
@@ -721,6 +722,7 @@ namespace Neo.SmartContract
 
             var stackItems = this.InvocationStack.SelectMany(p => p.EvaluationStack.Concat(p.AltStack));
             this.stackitemCount = ApplicationEngine.GetItemCount(stackItems);
+
             if (this.stackitemCount > ApplicationEngine.MaxStackSize)
             {
                 return false;

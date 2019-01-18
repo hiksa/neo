@@ -30,6 +30,7 @@ namespace Neo.Wallets.NEP6
         {
             this.indexer = indexer;
             this.path = path;
+
             if (File.Exists(path))
             {
                 JObject wallet;
@@ -260,12 +261,12 @@ namespace Neo.Wallets.NEP6
             IEnumerable<Coin> GetCoinsInternal()
             {
                 HashSet<CoinReference> inputs, claims;
-                Coin[] coins_unconfirmed;
+                Coin[] unconfirmedCoins;
                 lock (this.unconfirmed)
                 {
                     inputs = new HashSet<CoinReference>(this.unconfirmed.Values.SelectMany(p => p.Inputs));
                     claims = new HashSet<CoinReference>(this.unconfirmed.Values.OfType<ClaimTransaction>().SelectMany(p => p.Claims));
-                    coins_unconfirmed = this.unconfirmed
+                    unconfirmedCoins = this.unconfirmed
                         .Values
                         .SelectMany(tx => tx.Outputs.Select((o, i) => new Coin
                         {
@@ -305,7 +306,7 @@ namespace Neo.Wallets.NEP6
                 }
 
                 var accounts_set = new HashSet<UInt160>(accounts);
-                foreach (var coin in coins_unconfirmed)
+                foreach (var coin in unconfirmedCoins)
                 {
                     if (accounts_set.Contains(coin.Output.ScriptHash))
                     {
@@ -398,7 +399,6 @@ namespace Neo.Wallets.NEP6
             }
 
             account.Contract = contract;
-
             this.AddAccount(account, true);
 
             return account;
@@ -449,6 +449,7 @@ namespace Neo.Wallets.NEP6
                     account.Label = existingAccount.Label;
                     account.IsDefault = existingAccount.IsDefault;
                     account.Lock = existingAccount.Lock;
+
                     if (account.Contract == null)
                     {
                         account.Contract = existingAccount.Contract;

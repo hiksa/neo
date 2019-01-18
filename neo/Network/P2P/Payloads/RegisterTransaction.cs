@@ -113,8 +113,7 @@ namespace Neo.Network.P2P.Payloads
             this.Precision = reader.ReadByte();
             this.Owner = ECPoint.DeserializeFrom(reader, ECCurve.Secp256r1);
 
-            if (
-                this.Owner.IsInfinity 
+            if (this.Owner.IsInfinity 
                 && this.AssetType != AssetType.GoverningToken 
                 && this.AssetType != AssetType.UtilityToken)
             {
@@ -127,6 +126,7 @@ namespace Neo.Network.P2P.Payloads
         protected override void OnDeserialized()
         {
             base.OnDeserialized();
+
             if (this.AssetType == AssetType.GoverningToken && !this.Hash.Equals(Blockchain.GoverningToken.Hash))
             {
                 throw new FormatException();

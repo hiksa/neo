@@ -270,7 +270,8 @@ namespace Neo.Persistence
                 }
             }
 
-            var count = (int)snapshot.ValidatorsCount
+            var count = (int)snapshot
+                .ValidatorsCount
                 .Get()
                 .Votes
                 .Select((p, i) => new

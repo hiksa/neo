@@ -148,13 +148,19 @@ namespace Neo.Network
                     return null;
                 }
 
-                var serviceTypeXmlNode = desc.SelectSingleNode("//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:controlURL/text()", namespaceManager);
+                var serviceTypeXmlNode = desc.SelectSingleNode(
+                    "//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:controlURL/text()", 
+                    namespaceManager);
+
                 if (serviceTypeXmlNode == null)
                 {
                     return null;
                 }
 
-                var eventXmlNode = desc.SelectSingleNode("//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:eventSubURL/text()", namespaceManager);
+                var eventXmlNode = desc.SelectSingleNode(
+                    "//tns:service[contains(tns:serviceType,\"WANIPConnection\")]/tns:eventSubURL/text()", 
+                    namespaceManager);
+
                 return CombineUrls(resp, serviceTypeXmlNode.Value);
             }
             catch
@@ -190,6 +196,7 @@ namespace Neo.Network
                 reqs.Write(requestContentBytes, 0, requestContentBytes.Length);
                 var result = new XmlDocument();
                 var webResponse = request.GetResponse();
+
                 using (var responseStream = webResponse.GetResponseStream())
                 {
                     result.Load(responseStream);

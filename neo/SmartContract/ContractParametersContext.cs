@@ -81,6 +81,7 @@ namespace Neo.SmartContract
             {
                 var key = UInt160.Parse(property.Key);
                 var value = ContextItem.FromJson(property.Value);
+
                 context.contextItems.Add(key, value);
             }
 

@@ -11,6 +11,7 @@ namespace Neo.Network.P2P.Payloads
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
+
             if (reader.ReadByte() != 0)
             {
                 throw new FormatException();

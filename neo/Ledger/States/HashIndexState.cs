@@ -24,6 +24,7 @@ namespace Neo.Ledger.States
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
+
             this.Hash = reader.ReadSerializable<UInt256>();
             this.Index = reader.ReadUInt32();
         }
@@ -37,6 +38,7 @@ namespace Neo.Ledger.States
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
+
             writer.Write(this.Hash);
             writer.Write(this.Index);
         }

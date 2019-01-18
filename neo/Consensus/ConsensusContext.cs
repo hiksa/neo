@@ -247,7 +247,8 @@ namespace Neo.Consensus
             }
 
             var validators = this.snapshot.GetValidators(this.Transactions.Values).ToArray();
-            if (!Blockchain.GetConsensusAddress(validators).Equals(this.NextConsensus))
+            var currentConsensus = Blockchain.GetConsensusAddress(validators);
+            if (!currentConsensus.Equals(this.NextConsensus))
             {
                 return false;
             }
@@ -276,6 +277,7 @@ namespace Neo.Consensus
         private ConsensusPayload MakeSignedPayload(ConsensusMessage message)
         {
             message.ViewNumber = this.ViewNumber;
+
             var payload = new ConsensusPayload
             {
                 Version = Version,

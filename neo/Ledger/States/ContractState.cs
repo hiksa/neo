@@ -12,7 +12,7 @@ namespace Neo.Ledger.States
         public byte[] Script;
         public ContractParameterType[] ParameterList;
         public ContractParameterType ReturnType;
-        public ContractPropertyState ContractProperties;
+        public ContractPropertyStates ContractProperties;
         public string Name;
         public string CodeVersion;
         public string Author;
@@ -21,11 +21,11 @@ namespace Neo.Ledger.States
 
         private UInt160 scriptHash;
 
-        public bool HasStorage => this.ContractProperties.HasFlag(ContractPropertyState.HasStorage);
+        public bool HasStorage => this.ContractProperties.HasFlag(ContractPropertyStates.HasStorage);
 
-        public bool HasDynamicInvoke => this.ContractProperties.HasFlag(ContractPropertyState.HasDynamicInvoke);
+        public bool HasDynamicInvoke => this.ContractProperties.HasFlag(ContractPropertyStates.HasDynamicInvoke);
 
-        public bool Payable => this.ContractProperties.HasFlag(ContractPropertyState.Payable);
+        public bool Payable => this.ContractProperties.HasFlag(ContractPropertyStates.Payable);
 
         public UInt160 ScriptHash
         {
@@ -65,10 +65,11 @@ namespace Neo.Ledger.States
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
+
             this.Script = reader.ReadVarBytes();
             this.ParameterList = reader.ReadVarBytes().Select(p => (ContractParameterType)p).ToArray();
             this.ReturnType = (ContractParameterType)reader.ReadByte();
-            this.ContractProperties = (ContractPropertyState)reader.ReadByte();
+            this.ContractProperties = (ContractPropertyStates)reader.ReadByte();
             this.Name = reader.ReadVarString();
             this.CodeVersion = reader.ReadVarString();
             this.Author = reader.ReadVarString();
@@ -92,6 +93,7 @@ namespace Neo.Ledger.States
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
+
             writer.WriteVarBytes(this.Script);
             writer.WriteVarBytes(this.ParameterList.Cast<byte>().ToArray());
             writer.Write((byte)this.ReturnType);

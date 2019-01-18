@@ -60,6 +60,7 @@ namespace Neo
             int maxConnections = Peer.DefaultMaxConnections)
         {
             this.startMessage = new Peer.Start(port, webSocketPort, minDesiredConnections, maxConnections);
+
             if (!this.suspend)
             {
                 this.LocalNodeActorRef.Tell(this.startMessage);
@@ -95,6 +96,7 @@ namespace Neo
         internal void ResumeNodeStartup()
         {
             this.suspend = false;
+
             if (this.startMessage != null)
             {
                 this.LocalNodeActorRef.Tell(this.startMessage);

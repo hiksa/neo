@@ -8,7 +8,7 @@ namespace Neo.Extensions
         public static bool HasAllFlags(this Enum value, params Enum[] flags) =>
             flags.All(flag => value.HasFlag(flag));
 
-        public static bool HasOneOrMoreFlags(this Enum value, params Enum[] flags) =>
+        public static bool HasAnyFlags(this Enum value, params Enum[] flags) =>
             flags.Any(flag => value.HasFlag(flag));
 
         public static bool HasNoFlags(this Enum value, params Enum[] flags) =>

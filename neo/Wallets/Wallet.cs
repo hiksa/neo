@@ -44,25 +44,26 @@ namespace Neo.Wallets
                 throw new ArgumentNullException(nameof(passphrase));
             }
 
-            byte[] data = nep2.Base58CheckDecode();
+            var data = nep2.Base58CheckDecode();
             if (data.Length != 39 || data[0] != 0x01 || data[1] != 0x42 || data[2] != 0xe0)
             {
                 throw new FormatException();
             }
 
-            byte[] addresshash = new byte[4];
+            var addresshash = new byte[4];
             Buffer.BlockCopy(data, 3, addresshash, 0, 4);
-            byte[] derivedkey = SCrypt.DeriveKey(Encoding.UTF8.GetBytes(passphrase), addresshash, N, r, p, 64);
-            byte[] derivedhalf1 = derivedkey.Take(32).ToArray();
-            byte[] derivedhalf2 = derivedkey.Skip(32).ToArray();
-            byte[] encryptedkey = new byte[32];
+
+            var derivedkey = SCrypt.DeriveKey(Encoding.UTF8.GetBytes(passphrase), addresshash, N, r, p, 64);
+            var derivedhalf1 = derivedkey.Take(32).ToArray();
+            var derivedhalf2 = derivedkey.Skip(32).ToArray();
+            var encryptedkey = new byte[32];
 
             Buffer.BlockCopy(data, 7, encryptedkey, 0, 32);
-            byte[] privateKey = XOR(encryptedkey.AES256Decrypt(derivedhalf2), derivedhalf1);
 
-            ECPoint pubkey = Cryptography.ECC.ECCurve.Secp256r1.G * privateKey;
-            UInt160 scriptHash = Contract.CreateSignatureRedeemScript(pubkey).ToScriptHash();
-            string address = scriptHash.ToAddress();
+            var privateKey = XOR(encryptedkey.AES256Decrypt(derivedhalf2), derivedhalf1);
+            var pubkey = Cryptography.ECC.ECCurve.Secp256r1.G * privateKey;
+            var scriptHash = Contract.CreateSignatureRedeemScript(pubkey).ToScriptHash();
+            var address = scriptHash.ToAddress();
 
             if (!Encoding.ASCII.GetBytes(address).Sha256().Sha256().Take(4).SequenceEqual(addresshash))
             {
@@ -79,15 +80,16 @@ namespace Neo.Wallets
                 throw new ArgumentNullException();
             }
 
-            byte[] data = wif.Base58CheckDecode();
+            var data = wif.Base58CheckDecode();
             if (data.Length != 34 || data[0] != 0x80 || data[33] != 0x01)
             {
                 throw new FormatException();
             }
 
-            byte[] privateKey = new byte[32];
+            var privateKey = new byte[32];
             Buffer.BlockCopy(data, 1, privateKey, 0, privateKey.Length);
             Array.Clear(data, 0, data.Length);
+
             return privateKey;
         }
 
@@ -113,6 +115,7 @@ namespace Neo.Wallets
 
             var account = this.CreateAccount(privateKey);
             Array.Clear(privateKey, 0, privateKey.Length);
+
             return account;
         }
 
@@ -158,11 +161,15 @@ namespace Neo.Wallets
             if (assetId is UInt160 assetIdUnboxed)
             {
                 byte[] script;
-                var accounts = this.GetAccounts().Where(p => !p.WatchOnly).Select(p => p.ScriptHash).ToArray();
-                using (ScriptBuilder sb = new ScriptBuilder())
+                var accounts = this.GetAccounts()
+                    .Where(p => !p.WatchOnly)
+                    .Select(p => p.ScriptHash)
+                    .ToArray();
+
+                using (var sb = new ScriptBuilder())
                 {
                     sb.EmitPush(0);
-                    foreach (UInt160 account in accounts)
+                    foreach (var account in accounts)
                     {
                         sb.EmitAppCall(assetIdUnboxed, "balanceOf", account);
                         sb.Emit(OpCode.ADD);
@@ -172,7 +179,9 @@ namespace Neo.Wallets
                     script = sb.ToArray();
                 }
 
-                var engine = ApplicationEngine.Run(script, extraGAS: Fixed8.FromDecimal(0.2m) * accounts.Length);
+                var extraGas = Fixed8.FromDecimal(0.2m) * accounts.Length;
+                var engine = ApplicationEngine.Run(script, extraGAS: extraGas);
+
                 if (engine.State.HasFlag(VMState.FAULT))
                 {
                     return new BigDecimal(0, 0);
@@ -233,21 +242,23 @@ namespace Neo.Wallets
         public virtual WalletAccount Import(X509Certificate2 cert)
         {
             byte[] privateKey;
-            using (ECDsa ecdsa = cert.GetECDsaPrivateKey())
+            using (var ecdsa = cert.GetECDsaPrivateKey())
             {
                 privateKey = ecdsa.ExportParameters(true).D;
             }
 
             var account = this.CreateAccount(privateKey);
             Array.Clear(privateKey, 0, privateKey.Length);
+
             return account;
         }
 
         public virtual WalletAccount Import(string wif)
         {
-            byte[] privateKey = GetPrivateKeyFromWIF(wif);
-            WalletAccount account = this.CreateAccount(privateKey);
+            var privateKey = GetPrivateKeyFromWIF(wif);
+            var account = this.CreateAccount(privateKey);
             Array.Clear(privateKey, 0, privateKey.Length);
+
             return account;
         }
 
@@ -256,10 +267,11 @@ namespace Neo.Wallets
             var privateKey = GetPrivateKeyFromNEP2(nep2, passphrase);
             var account = this.CreateAccount(privateKey);
             Array.Clear(privateKey, 0, privateKey.Length);
+
             return account;
         }
 
-        public T MakeTransaction<T>(T tx, UInt160 from = null, UInt160 change_address = null, Fixed8 fee = default(Fixed8)) where T : Transaction
+        public T MakeTransaction<T>(T tx, UInt160 from = null, UInt160 changeAddress = null, Fixed8 fee = default(Fixed8)) where T : Transaction
         {
             if (tx.Outputs == null)
             {
@@ -277,7 +289,7 @@ namespace Neo.Wallets
                 ? new TransactionOutput[0]
                 : tx.Outputs;
 
-            var pay_total = outputs
+            var outgoingAssets = outputs
                 .GroupBy(
                     p => p.AssetId, 
                     (k, g) => new { AssetId = k, Value = g.Sum(p => p.Value) })
@@ -285,15 +297,15 @@ namespace Neo.Wallets
 
             if (fee > Fixed8.Zero)
             {
-                if (pay_total.ContainsKey(Blockchain.UtilityToken.Hash))
+                if (outgoingAssets.ContainsKey(Blockchain.UtilityToken.Hash))
                 {
                     var value = new
                     {
                         AssetId = Blockchain.UtilityToken.Hash,
-                        Value = pay_total[Blockchain.UtilityToken.Hash].Value + fee
+                        Value = outgoingAssets[Blockchain.UtilityToken.Hash].Value + fee
                     };
 
-                    pay_total[Blockchain.UtilityToken.Hash] = value;
+                    outgoingAssets[Blockchain.UtilityToken.Hash] = value;
                 }
                 else
                 {
@@ -303,11 +315,11 @@ namespace Neo.Wallets
                         Value = fee
                     };
 
-                    pay_total.Add(Blockchain.UtilityToken.Hash, value);
+                    outgoingAssets.Add(Blockchain.UtilityToken.Hash, value);
                 }
             }
 
-            var pay_coins = pay_total
+            var outgoingCoins = outgoingAssets
                 .Select(p => new
                 {
                     AssetId = p.Key,
@@ -317,12 +329,12 @@ namespace Neo.Wallets
                 })
                 .ToDictionary(p => p.AssetId);
 
-            if (pay_coins.Any(p => p.Value.Unspents == null))
+            if (outgoingCoins.Any(p => p.Value.Unspents == null))
             {
                 return null;
             }
 
-            var sumOfInputs = pay_coins.Values.ToDictionary(
+            var sumOfInputs = outgoingCoins.Values.ToDictionary(
                 p => p.AssetId,
                 p => new
                 {
@@ -330,27 +342,31 @@ namespace Neo.Wallets
                     Value = p.Unspents.Sum(q => q.Output.Value)
                 });
 
-            if (change_address == null)
+            if (changeAddress == null)
             {
-                change_address = this.GetChangeAddress();
+                changeAddress = this.GetChangeAddress();
             }
 
-            List<TransactionOutput> outputs_new = new List<TransactionOutput>(tx.Outputs);
-            foreach (UInt256 asset_id in sumOfInputs.Keys)
+            var transactionOutputs = new List<TransactionOutput>(tx.Outputs);
+            foreach (var assetId in sumOfInputs.Keys)
             {
-                if (sumOfInputs[asset_id].Value > pay_total[asset_id].Value)
+                if (sumOfInputs[assetId].Value > outgoingAssets[assetId].Value)
                 {
-                    outputs_new.Add(new TransactionOutput
+                    transactionOutputs.Add(new TransactionOutput
                     {
-                        AssetId = asset_id,
-                        Value = sumOfInputs[asset_id].Value - pay_total[asset_id].Value,
-                        ScriptHash = change_address
+                        AssetId = assetId,
+                        Value = sumOfInputs[assetId].Value - outgoingAssets[assetId].Value,
+                        ScriptHash = changeAddress
                     });
                 }
             }
 
-            tx.Inputs = pay_coins.Values.SelectMany(p => p.Unspents).Select(p => p.Reference).ToArray();
-            tx.Outputs = outputs_new.ToArray();
+            tx.Inputs = outgoingCoins.Values
+                .SelectMany(p => p.Unspents)
+                .Select(p => p.Reference)
+                .ToArray();
+
+            tx.Outputs = transactionOutputs.ToArray();
             return tx;
         }
 
@@ -402,7 +418,7 @@ namespace Neo.Wallets
                     foreach (var output in cOutputs)
                     {
                         var balances = new List<(UInt160 Account, BigInteger Value)>();
-                        foreach (UInt160 account in accounts)
+                        foreach (var account in accounts)
                         {
                             byte[] script;
                             using (var sb2 = new ScriptBuilder())
@@ -430,7 +446,7 @@ namespace Neo.Wallets
                         {
                             balances = balances.OrderByDescending(p => p.Value).ToList();
                             var amount = output.Value;
-                            int i = 0;
+                            var i = 0;
                             while (balances[i].Value <= amount)
                             {
                                 amount -= balances[i++].Value;
@@ -466,9 +482,10 @@ namespace Neo.Wallets
                         }
                     }
 
-                    byte[] nonce = new byte[8];
-                    Random.NextBytes(nonce);
+                    var nonce = new byte[8];
+                    Wallet.Random.NextBytes(nonce);
                     sb.Emit(OpCode.RET, nonce);
+
                     tx = new InvocationTransaction
                     {
                         Version = 1,
@@ -476,17 +493,20 @@ namespace Neo.Wallets
                     };
                 }
 
-                attributes.AddRange(attributeHashes.Select(p => new TransactionAttribute
+                var transactionAttributes = attributeHashes.Select(p => new TransactionAttribute
                 {
                     Usage = TransactionAttributeUsage.Script,
                     Data = p.ToArray()
-                }));
+                });
+
+                attributes.AddRange(transactionAttributes);
             }
 
             tx.Attributes = attributes.ToArray();
             tx.Inputs = new CoinReference[0];
             tx.Outputs = outputs.Where(p => p.IsGlobalAsset).Select(p => p.ToTxOutput()).ToArray();
             tx.Witnesses = new Witness[0];
+
             if (tx is InvocationTransaction invocationTransaction)
             {
                 var engine = ApplicationEngine.Run(invocationTransaction.Script, invocationTransaction);
@@ -545,7 +565,7 @@ namespace Neo.Wallets
             }
 
             var orderedUnspents = unspentCoins.OrderByDescending(p => p.Output.Value).ToArray();
-            int i = 0;
+            var i = 0;
             while (orderedUnspents[i].Output.Value <= amount)
             {
                 amount -= orderedUnspents[i++].Output.Value;
@@ -553,9 +573,7 @@ namespace Neo.Wallets
 
             if (amount == Fixed8.Zero)
             {
-                return orderedUnspents
-                    .Take(i)
-                    .ToArray();
+                return orderedUnspents.Take(i).ToArray();
             }
             else
             {

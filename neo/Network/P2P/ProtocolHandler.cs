@@ -227,14 +227,16 @@ namespace Neo.Network.P2P
 
             var invPayload = InvPayload.Create(InventoryType.Block, hashes.ToArray());
             var invMessage = Message.Create("inv", invPayload);
-
             UntypedActor.Context.Parent.Tell(invMessage);
         }
 
         private void OnGetDataMessageReceived(InvPayload payload)
         {
-            var hashes = payload.Hashes.Where(p => this.sentHashes.Add(p)).ToArray();
-            foreach (var hash in hashes)
+            var newHashes = payload.Hashes
+                .Where(p => this.sentHashes.Add(p))
+                .ToArray();
+
+            foreach (var hash in newHashes)
             {
                 Blockchain.Instance.RelayCache.TryGet(hash, out IInventory inventory);
                 switch (payload.Type)
@@ -394,7 +396,6 @@ namespace Neo.Network.P2P
 
             var newTasksPayload = InvPayload.Create(payload.Type, hashes);
             var newTasksMessage = new TaskManager.NewTasks(newTasksPayload);
-
             this.system.TaskManagerActorRef.Tell(newTasksMessage, Context.Parent);
         }
 

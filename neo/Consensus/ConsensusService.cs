@@ -185,7 +185,9 @@ namespace Neo.Consensus
 
             if (viewNumber > 0)
             {
-                this.Log($"changeview: view={viewNumber} primary={this.context.Validators[this.context.GetPrimaryIndex((byte)(viewNumber - 1u))]}", LogLevel.Warning);
+                this.Log(
+                    $"changeview: view={viewNumber} primary={this.context.Validators[this.context.GetPrimaryIndex((byte)(viewNumber - 1u))]}", 
+                    LogLevel.Warning);
             }
 
             var nodeRole = this.context.MyIndex == this.context.PrimaryIndex 
@@ -238,10 +240,12 @@ namespace Neo.Consensus
             }
 
             this.Log($"timeout: height={timer.Height} view={timer.ViewNumber} state={this.context.State}");
+
             if (this.context.State.HasFlag(ConsensusStates.Primary) && !this.context.State.HasFlag(ConsensusStates.RequestSent))
             {
                 this.Log($"send prepare request: height={timer.Height} view={timer.ViewNumber}");
                 this.context.State |= ConsensusStates.RequestSent;
+
                 if (!this.context.State.HasFlag(ConsensusStates.SignatureSent))
                 {
                     this.context.Fill();
@@ -256,6 +260,7 @@ namespace Neo.Consensus
                 {
                     var transactionHashes = this.context.TransactionHashes.Skip(1).ToArray();
                     var payloads = InvPayload.CreateMany(InventoryType.TX, transactionHashes);
+
                     foreach (var invPayload in payloads)
                     {
                         var message = Message.Create("inv", invPayload);
@@ -418,7 +423,8 @@ namespace Neo.Consensus
                 {
                     var signature = this.context.Signatures[i];
                     var currentPublicKey = this.context.Validators[i].EncodePoint(false);
-                    if (!Crypto.Default.VerifySignature(hashData, signature, currentPublicKey))
+                    var signatureIsCorrect = Crypto.Default.VerifySignature(hashData, signature, currentPublicKey);
+                    if (!signatureIsCorrect)
                     {
                         this.context.Signatures[i] = null;
                     }
@@ -429,8 +435,8 @@ namespace Neo.Consensus
 
             var mempool = Blockchain.Instance.GetMemoryPool().ToDictionary(p => p.Hash);
             var unverified = new List<Transaction>();
-
             var transactionHashes = this.context.TransactionHashes.Skip(1);
+
             foreach (var hash in transactionHashes)
             {
                 if (mempool.TryGetValue(hash, out Transaction tx))
@@ -465,7 +471,8 @@ namespace Neo.Consensus
 
             if (this.context.Transactions.Count < this.context.TransactionHashes.Length)
             {
-                var hashes = this.context.TransactionHashes
+                var hashes = this.context
+                    .TransactionHashes
                     .Where(i => !this.context.Transactions.ContainsKey(i))
                     .ToArray();
 
@@ -492,7 +499,8 @@ namespace Neo.Consensus
             }
 
             var publicKey = this.context.Validators[payload.ValidatorIndex].EncodePoint(false);
-            if (Crypto.Default.VerifySignature(hashData, message.Signature, publicKey))
+            var signatureIsCorrect = Crypto.Default.VerifySignature(hashData, message.Signature, publicKey);
+            if (signatureIsCorrect)
             {
                 this.context.Signatures[payload.ValidatorIndex] = message.Signature;
                 this.CheckSignatures();

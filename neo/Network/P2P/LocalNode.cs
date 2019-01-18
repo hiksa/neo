@@ -88,6 +88,7 @@ namespace Neo.Network.P2P
             {
                 var maxCount = Math.Max(count, 5);
                 var moreEndpoints = LocalNode.GetIPEndPointsFromSeedList(maxCount);
+
                 this.AddPeers(moreEndpoints);
             }
         }
@@ -95,6 +96,7 @@ namespace Neo.Network.P2P
         protected override void OnReceive(object message)
         {
             base.OnReceive(message);
+
             switch (message)
             {
                 case Message msg:

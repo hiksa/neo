@@ -39,6 +39,7 @@ namespace Neo.Network.P2P.Payloads
         protected override void OnDeserialized()
         {
             base.OnDeserialized();
+
             if (this.Inputs.Length != 0)
             {
                 throw new FormatException();

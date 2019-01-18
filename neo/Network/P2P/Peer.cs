@@ -41,7 +41,7 @@ namespace Neo.Network.P2P
         
         static Peer()
         {
-            IEnumerable<IPAddress> remoteAddresses = NetworkInterface
+            var remoteAddresses = NetworkInterface
                 .GetAllNetworkInterfaces()
                 .SelectMany(p => p.GetIPProperties().UnicastAddresses)
                 .Select(p => p.Address.Unmap());
@@ -229,7 +229,7 @@ namespace Neo.Network.P2P
                     localAddress: new IPEndPoint(IPAddress.Any, port), 
                     options: new[] { new Inet.SO.ReuseAddress(true) });
 
-                TcpManagerActorRef.Tell(tcpBindMessage);
+                Peer.TcpManagerActorRef.Tell(tcpBindMessage);
             }
 
             if (webSocketPort > 0)
@@ -266,9 +266,12 @@ namespace Neo.Network.P2P
                 this.connectedAddresses[remote.Address] = count + 1;
                 var connectionProps = this.ProtocolProps(this.Sender, remote, local);
                 var connection = Context.ActorOf(connectionProps, $"connection_{Guid.NewGuid()}");
+
                 UntypedActor.Context.Watch(connection);
 
-                this.Sender.Tell(new Tcp.Register(connection));
+                var tcpRegisterMessage = new Tcp.Register(connection);
+                this.Sender.Tell(tcpRegisterMessage);
+
                 this.ConnectedPeers.TryAdd(connection, remote);
             }
         }

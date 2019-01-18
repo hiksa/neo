@@ -21,6 +21,7 @@ namespace Neo.Wallets
 
             this.PrivateKey = new byte[32];
             Buffer.BlockCopy(privateKey, privateKey.Length - 32, this.PrivateKey, 0, 32);
+
             if (privateKey.Length == 32)
             {
                 this.PublicKey = Cryptography.ECC.ECCurve.Secp256r1.G * privateKey;

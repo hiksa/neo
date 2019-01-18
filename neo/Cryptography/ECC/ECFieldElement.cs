@@ -161,8 +161,7 @@ namespace Neo.Cryptography.ECC
             return null;
         }
 
-        public ECFieldElement Square() =>
-            new ECFieldElement((this.Value * this.Value).Mod(this.curve.Q), this.curve);
+        public ECFieldElement Square() => new ECFieldElement((this.Value * this.Value).Mod(this.curve.Q), this.curve);
 
         public byte[] ToByteArray()
         {

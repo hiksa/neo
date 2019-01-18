@@ -29,6 +29,7 @@ namespace Neo.Extensions
                         ms.Write(group, 0, count);
                     }
                 } while (padding == 0);
+
                 return ms.ToArray();
             }
         }

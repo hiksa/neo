@@ -101,7 +101,7 @@ namespace Neo.IO.Json
             }
 
             JObject.SkipSpace(reader);
-            char firstChar = (char)reader.Peek();
+            var firstChar = (char)reader.Peek();
             if (firstChar == '\"' || firstChar == '\'')
             {
                 return JString.Parse(reader);
@@ -144,6 +144,7 @@ namespace Neo.IO.Json
                 JObject.SkipSpace(reader);
                 var name = JString.Parse(reader).Value;
                 JObject.SkipSpace(reader);
+
                 if (reader.Read() != ':')
                 {
                     throw new FormatException();

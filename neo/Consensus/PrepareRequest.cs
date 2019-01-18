@@ -42,6 +42,7 @@ namespace Neo.Consensus
             }
 
             this.MinerTransaction = reader.ReadSerializable<MinerTransaction>();
+
             if (this.MinerTransaction.Hash != this.TransactionHashes[0])
             {
                 throw new FormatException();
@@ -53,6 +54,7 @@ namespace Neo.Consensus
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
+
             writer.Write(this.Nonce);
             writer.Write(this.NextConsensus);
             writer.Write(this.TransactionHashes);

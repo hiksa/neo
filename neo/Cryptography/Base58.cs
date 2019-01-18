@@ -14,7 +14,7 @@ namespace Neo.Cryptography
             var decoded = BigInteger.Zero;
             for (int i = input.Length - 1; i >= 0; i--)
             {
-                int index = Alphabet.IndexOf(input[i]);
+                var index = Base58.Alphabet.IndexOf(input[i]);
                 if (index == -1)
                 {
                     throw new FormatException("Not a valid base58 input");
@@ -27,18 +27,20 @@ namespace Neo.Cryptography
             Array.Reverse(bytes);
 
             var shouldStripSignByte = bytes.Length > 1 && bytes[0] == 0 && bytes[1] >= 0x80;
-            var leadingZeros = GetLeadingZeros(input);
-
+            var leadingZeros = Base58.GetLeadingZeros(input);
             var resultLength = bytes.Length - (shouldStripSignByte ? 1 : 0) + leadingZeros;
             var result = new byte[resultLength];
-            Array.Copy(bytes, shouldStripSignByte ? 1 : 0, result, leadingZeros, result.Length - leadingZeros);
+            var copyStartIndex = shouldStripSignByte ? 1 : 0;
+            var copyLength = result.Length - leadingZeros;
+            Array.Copy(bytes, copyStartIndex, result, leadingZeros, copyLength);
 
             return result;
         }
 
         public static string Encode(byte[] input)
         {
-            var value = new BigInteger(new byte[1].Concat(input).Reverse().ToArray());
+            var valueBytes = new byte[1].Concat(input).Reverse().ToArray();
+            var value = new BigInteger(valueBytes);
             var sb = new StringBuilder();
             while (value >= 58)
             {

@@ -85,8 +85,13 @@ namespace Neo.Network.P2P.Payloads
             }
 
             this.Script = reader.ReadVarBytes();
-            this.ParameterList = reader.ReadVarBytes().Select(p => (ContractParameterType)p).ToArray();
+            this.ParameterList = reader
+                .ReadVarBytes()
+                .Select(p => (ContractParameterType)p)
+                .ToArray();
+
             this.ReturnType = (ContractParameterType)reader.ReadByte();
+
             if (this.Version >= 1)
             {
                 this.NeedStorage = reader.ReadBoolean();

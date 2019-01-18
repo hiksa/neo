@@ -146,7 +146,7 @@ namespace Neo.Ledger
             this.system = system;
             this.Store = store;
 
-            lock (LockObj)
+            lock (Blockchain.LockObj)
             {
                 if (instance != null)
                 {
@@ -161,6 +161,7 @@ namespace Neo.Ledger
 
                 this.headerIndex.AddRange(headersToAdd);
                 this.storedHeaderCount += (uint)this.headerIndex.Count;
+
                 if (this.storedHeaderCount == 0)
                 {
                     var blockHashesToAdd = store.GetBlocks()
@@ -298,6 +299,7 @@ namespace Neo.Ledger
                     {
                         var validator = snapshot.Validators.GetAndChange(pubkey);
                         validator.Votes -= balance;
+
                         if (!validator.Registered && validator.Votes.Equals(Fixed8.Zero))
                         {
                             snapshot.Validators.Delete(pubkey);
@@ -326,7 +328,8 @@ namespace Neo.Ledger
                     accountState.Votes = votes;
                     foreach (var pubkey in accountState.Votes)
                     {
-                        snapshot.Validators.GetAndChange(pubkey, () => new ValidatorState(pubkey)).Votes += balance;
+                        var validatorState = snapshot.Validators.GetAndChange(pubkey, () => new ValidatorState(pubkey));
+                        validatorState.Votes += balance;
                     }
 
                     break;
@@ -365,15 +368,18 @@ namespace Neo.Ledger
                     this.OnNewHeaders(headers);
                     break;
                 case Block block:
-                    this.Sender.Tell(this.OnNewBlock(block));
+                    var blockRelayResult = this.OnNewBlock(block);
+                    this.Sender.Tell(blockRelayResult);
                     break;
                 case Transaction transaction:
-                    var newTransactionMessage = this.OnNewTransaction(transaction);
-                    this.Sender.Tell(newTransactionMessage);
+                    var txRelayResult = this.OnNewTransaction(transaction);
+                    this.Sender.Tell(txRelayResult);
                     break;
                 case ConsensusPayload payload:
-                    this.Sender.Tell(this.OnNewConsensus(payload));
+                    var consensusRelayResult = this.OnNewConsensus(payload);
+                    this.Sender.Tell(consensusRelayResult);
                     break;
+                    
                 case Terminated terminated:
                     this.subscriberActorRefs.Remove(terminated.ActorRef);
                     break;
@@ -462,10 +468,10 @@ namespace Neo.Ledger
             if (block.Index == Height + 1)
             {
                 var blockToPersist = block;
-                var blocksToPersistList = new List<Block>();
+                var blocksToPersist = new List<Block>();
                 while (true)
                 {
-                    blocksToPersistList.Add(blockToPersist);
+                    blocksToPersist.Add(blockToPersist);
                     if (blockToPersist.Index + 1 >= this.headerIndex.Count)
                     {
                         break;
@@ -478,13 +484,13 @@ namespace Neo.Ledger
                     }
                 }
 
-                var blocksPersisted = 0;
-                foreach (var item in blocksToPersistList)
+                var persistedBlocksCount = 0;
+                foreach (var item in blocksToPersist)
                 {
                     this.blockCacheUnverified.Remove(item.Index);
                     this.Persist(item);
 
-                    if (blocksPersisted++ < blocksToPersistList.Count - 2)
+                    if (persistedBlocksCount++ < blocksToPersist.Count - 2)
                     {
                         continue;
                     }
@@ -492,7 +498,8 @@ namespace Neo.Ledger
                     // Relay most recent 2 blocks persisted
                     if (item.Index + 100 >= this.headerIndex.Count)
                     {
-                        this.system.LocalNodeActorRef.Tell(new LocalNode.RelayDirectly(item));
+                        var relayDirectlyMessage = new LocalNode.RelayDirectly(item);
+                        this.system.LocalNodeActorRef.Tell(relayDirectlyMessage);
                     }
                 }
 
@@ -511,6 +518,7 @@ namespace Neo.Ledger
             else
             {
                 this.blockCache.Add(block.Hash, block);
+
                 if (block.Index + 100 >= this.headerIndex.Count)
                 {
                     var relayDirectlyMessage = new LocalNode.RelayDirectly(block);
@@ -634,12 +642,14 @@ namespace Neo.Ledger
 
             var relayDirectlyMessage = new LocalNode.RelayDirectly(transaction);
             this.system.LocalNodeActorRef.Tell(relayDirectlyMessage);
+
             return RelayResultReason.Succeed;
         }
 
         private void OnPersistCompleted(Block block)
         {
             this.blockCache.Remove(block.Hash);
+
             foreach (var tx in block.Transactions)
             {
                 this.mempool.TryRemove(tx.Hash, out _);
@@ -679,6 +689,7 @@ namespace Neo.Ledger
                 var allResults = new List<ApplicationExecuted>();
 
                 snapshot.PersistingBlock = block;
+
                 var transactionsFeeSum = (long)block.Transactions.Sum(p => p.SystemFee);
                 var blockState = new BlockState
                 {
@@ -757,14 +768,14 @@ namespace Neo.Ledger
                                     {
                                         var validatorState = snapshot.Validators.GetAndChange(pubkey);
                                         validatorState.Votes -= previousTransactionOutput.Value;
+
                                         if (!validatorState.Registered && validatorState.Votes.Equals(Fixed8.Zero))
                                         {
                                             snapshot.Validators.Delete(pubkey);
                                         }
                                     }
 
-                                    var votes = snapshot.ValidatorsCount.GetAndChange().Votes[accountState.Votes.Length - 1];
-                                    votes -= previousTransactionOutput.Value;
+                                    snapshot.ValidatorsCount.GetAndChange().Votes[accountState.Votes.Length - 1] -= previousTransactionOutput.Value;
                                 }
                             }
 
@@ -863,7 +874,7 @@ namespace Neo.Ledger
                                         Script = publishTransaction.Script,
                                         ParameterList = publishTransaction.ParameterList,
                                         ReturnType = publishTransaction.ReturnType,
-                                        ContractProperties = (ContractPropertyState)Convert.ToByte(publishTransaction.NeedStorage),
+                                        ContractProperties = (ContractPropertyStates)Convert.ToByte(publishTransaction.NeedStorage),
                                         Name = publishTransaction.Name,
                                         CodeVersion = publishTransaction.CodeVersion,
                                         Author = publishTransaction.Author,
@@ -873,15 +884,11 @@ namespace Neo.Ledger
 
                             break;
 #pragma warning restore CS0612
-                        case InvocationTransaction invocationTransaction:
+                        case InvocationTransaction invocationTx:
                             {
-                                using (var engine = new ApplicationEngine(
-                                    TriggerType.Application,
-                                    invocationTransaction,
-                                    snapshot.Clone(),
-                                    invocationTransaction.Gas))
+                                using (var engine = new ApplicationEngine(TriggerType.Application,invocationTx, snapshot.Clone(), invocationTx.Gas))
                                 {
-                                    engine.LoadScript(invocationTransaction.Script);
+                                    engine.LoadScript(invocationTx.Script);
                                     if (engine.Execute())
                                     {
                                         engine.Service.Commit();
@@ -890,7 +897,7 @@ namespace Neo.Ledger
                                     var executionResult = new ApplicationExecutionResult
                                     {
                                         Trigger = TriggerType.Application,
-                                        ScriptHash = invocationTransaction.Script.ToScriptHash(),
+                                        ScriptHash = invocationTx.Script.ToScriptHash(),
                                         VMState = engine.State,
                                         GasConsumed = engine.GasConsumed,
                                         Stack = engine.ResultStack.ToArray(),
@@ -915,6 +922,7 @@ namespace Neo.Ledger
 
                 snapshot.BlockHashIndex.GetAndChange().Hash = block.Hash;
                 snapshot.BlockHashIndex.GetAndChange().Index = block.Index;
+
                 if (block.Index == this.headerIndex.Count)
                 {
                     this.headerIndex.Add(block.Hash);
@@ -963,6 +971,7 @@ namespace Neo.Ledger
                     };
 
                     snapshot.HeaderHashList.Add(this.storedHeaderCount, headerHashList);
+
                     this.storedHeaderCount += 2000;
                 }
 

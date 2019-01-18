@@ -263,7 +263,7 @@ namespace Neo.UnitTests
             }
 
             // Neo.Contract.Create: f66ca56e (requires push properties on fourth position)
-            byte[] SyscallContractCreateHash00 = new byte[]{(byte)ContractPropertyState.NoProperty, 0x00, 0x00, 0x00, 0x68, 0x04, 0xf6, 0x6c, 0xa5, 0x6e};
+            byte[] SyscallContractCreateHash00 = new byte[]{(byte)ContractPropertyStates.NoProperty, 0x00, 0x00, 0x00, 0x68, 0x04, 0xf6, 0x6c, 0xa5, 0x6e};
             using ( ApplicationEngine ae = new ApplicationEngine(TriggerType.Application, null, null, Fixed8.Zero) )
             {
                 ae.LoadScript(SyscallContractCreateHash00);
@@ -311,7 +311,7 @@ namespace Neo.UnitTests
             }
 
             // Neo.Contract.Migrate: 471b6290 (requires push properties on fourth position)
-            byte[] SyscallContractMigrateHash00 = new byte[]{(byte)ContractPropertyState.NoProperty, 0x00, 0x00, 0x00, 0x68, 0x04, 0x47, 0x1b, 0x62, 0x90};
+            byte[] SyscallContractMigrateHash00 = new byte[]{(byte)ContractPropertyStates.NoProperty, 0x00, 0x00, 0x00, 0x68, 0x04, 0x47, 0x1b, 0x62, 0x90};
             using ( ApplicationEngine ae = new ApplicationEngine(TriggerType.Application, null, null, Fixed8.Zero) )
             {
                 ae.LoadScript(SyscallContractMigrateHash00);

@@ -58,7 +58,8 @@ namespace Neo.Extensions
         public static IEnumerable<ValidatorState> GetEnrollments(this IPersistence persistence)
         {
             var standbyValidators = new HashSet<ECPoint>(Blockchain.StandbyValidators);
-            return persistence.Validators
+            return persistence
+                .Validators
                 .Find()
                 .Select(p => p.Value)
                 .Where(p => p.Registered || standbyValidators.Contains(p.PublicKey));

@@ -441,7 +441,9 @@ namespace Neo.Network.RPC
 
                 case "getrawmempool":
                     {
-                        var items = Blockchain.Instance.GetMemoryPool().Select(p => (JObject)p.Hash.ToString());
+                        var items = Blockchain.Instance
+                            .GetMemoryPool()
+                            .Select(p => (JObject)p.Hash.ToString());
                         return new JArray(items);
                     }
 
@@ -458,7 +460,12 @@ namespace Neo.Network.RPC
                         if (verbose)
                         {
                             var json = tx.ToJson();
-                            var height = Blockchain.Instance.Store.GetTransactions().TryGet(hash)?.BlockIndex;
+                            var height = Blockchain.Instance
+                                .Store
+                                .GetTransactions()
+                                .TryGet(hash)
+                                ?.BlockIndex;
+
                             if (height != null)
                             {
                                 var header = Blockchain.Instance.Store.GetHeader((uint)height);
@@ -507,7 +514,12 @@ namespace Neo.Network.RPC
                     {
                         var hash = UInt256.Parse(requestParams[0].AsString());
                         var index = (ushort)requestParams[1].AsNumber();
-                        return Blockchain.Instance.Store.GetUnspent(hash, index)?.ToJson(index);
+                        var unspent = Blockchain.Instance
+                            .Store
+                            .GetUnspent(hash, index)
+                            ?.ToJson(index);
+
+                        return unspent;
                     }
 
                 case "getvalidators":
@@ -622,6 +634,7 @@ namespace Neo.Network.RPC
                         var from = requestParams[1].AsString().ToScriptHash();
                         var to = requestParams[2].AsString().ToScriptHash();
                         var value = BigDecimal.Parse(requestParams[3].AsString(), descriptor.Decimals);
+
                         if (value.Sign <= 0)
                         {
                             throw new RpcException(-32602, "Invalid params");
@@ -723,6 +736,7 @@ namespace Neo.Network.RPC
 
                         var parametersContext = new ContractParametersContext(tx);
                         this.Wallet.Sign(parametersContext);
+
                         if (parametersContext.Completed)
                         {
                             tx.Witnesses = parametersContext.GetWitnesses();
@@ -740,9 +754,10 @@ namespace Neo.Network.RPC
 
                 case "sendrawtransaction":
                     {
-                        var tx = Transaction.DeserializeFrom(requestParams[0].AsString().HexToBytes());
+                        var txBytes = requestParams[0].AsString().HexToBytes();
+                        var tx = Transaction.DeserializeFrom(txBytes);
                         var reason = this.system.BlockchainActorRef.Ask<RelayResultReason>(tx).Result;
-                        return GetRelayResult(reason);
+                        return RpcServer.GetRelayResult(reason);
                     }
 
                 case "sendtoaddress":
@@ -756,6 +771,7 @@ namespace Neo.Network.RPC
                         var descriptor = new AssetDescriptor(assetId);
                         var scriptHash = requestParams[1].AsString().ToScriptHash();
                         var value = BigDecimal.Parse(requestParams[2].AsString(), descriptor.Decimals);
+
                         if (value.Sign <= 0)
                         {
                             throw new RpcException(-32602, "Invalid params");
@@ -779,14 +795,14 @@ namespace Neo.Network.RPC
                             new TransferOutput { AssetId = assetId,  Value = value, ScriptHash = scriptHash }
                         };
 
-                        var tx = Wallet.MakeTransaction(null, outputs, changeAddress: changeAddress, fee: fee);
+                        var tx = this.Wallet.MakeTransaction(null, outputs, null, changeAddress, fee);
                         if (tx == null)
                         {
                             throw new RpcException(-300, "Insufficient funds");
                         }
 
                         var parametersContext = new ContractParametersContext(tx);
-                        Wallet.Sign(parametersContext);
+                        this.Wallet.Sign(parametersContext);
 
                         if (parametersContext.Completed)
                         {
@@ -806,7 +822,11 @@ namespace Neo.Network.RPC
 
                 case "submitblock":
                     {
-                        var block = requestParams[0].AsString().HexToBytes().AsSerializable<Block>();
+                        var block = requestParams[0]
+                            .AsString()
+                            .HexToBytes()
+                            .AsSerializable<Block>();
+
                         var relayResultReason = this.system.BlockchainActorRef.Ask<RelayResultReason>(block).Result;
                         return RpcServer.GetRelayResult(relayResultReason);
                     }

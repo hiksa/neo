@@ -20,6 +20,7 @@ namespace Neo.Network.P2P.Payloads
         {
             var buffer = new byte[filter.M / 8];
             filter.GetBits(buffer);
+
             return new FilterLoadPayload
             {
                 Filter = buffer,
@@ -32,6 +33,7 @@ namespace Neo.Network.P2P.Payloads
         {
             this.Filter = reader.ReadVarBytes(36000);
             this.K = reader.ReadByte();
+
             if (this.K > 50)
             {
                 throw new FormatException();

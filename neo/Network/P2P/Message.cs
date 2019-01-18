@@ -41,6 +41,7 @@ namespace Neo.Network.P2P
             }
 
             this.Command = reader.ReadFixedString(12);
+
             var length = reader.ReadUInt32();
             if (length > Message.PayloadMaxSize)
             {
@@ -49,6 +50,7 @@ namespace Neo.Network.P2P
 
             this.Checksum = reader.ReadUInt32();
             this.Payload = reader.ReadBytes((int)length);
+
             if (Message.GetChecksum(this.Payload) != this.Checksum)
             {
                 throw new FormatException();
@@ -64,7 +66,6 @@ namespace Neo.Network.P2P
             writer.Write(this.Payload);
         }
 
-        private static uint GetChecksum(byte[] value) =>
-            Crypto.Default.Hash256(value).ToUInt32(0);
+        private static uint GetChecksum(byte[] value) => Crypto.Default.Hash256(value).ToUInt32(0);
     }
 }

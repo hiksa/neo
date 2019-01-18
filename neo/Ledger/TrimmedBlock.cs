@@ -61,14 +61,12 @@ namespace Neo.Ledger
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-
             this.Hashes = reader.ReadSerializableArray<UInt256>();
         }
 
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
-
             writer.Write(this.Hashes);
         }
 

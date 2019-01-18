@@ -31,7 +31,10 @@ namespace Neo.Cryptography
 
         public void Add(byte[] element)
         {
-            var hashedSeeds = this.seeds.AsParallel().Select(s => element.Murmur32(s));
+            var hashedSeeds = this.seeds
+                .AsParallel()
+                .Select(s => element.Murmur32(s));
+
             foreach (var item in hashedSeeds)
             {
                 var bitIndex = (int)(item % (uint)this.bits.Length);
@@ -41,7 +44,10 @@ namespace Neo.Cryptography
 
         public bool Check(byte[] element)
         {
-            var hashedSeeds = this.seeds.AsParallel().Select(s => element.Murmur32(s));
+            var hashedSeeds = this.seeds
+                .AsParallel()
+                .Select(s => element.Murmur32(s));
+
             foreach (var item in hashedSeeds)
             {
                 if (!this.bits.Get((int)(item % (uint)this.bits.Length)))

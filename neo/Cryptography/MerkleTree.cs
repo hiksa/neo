@@ -100,6 +100,7 @@ namespace Neo.Cryptography
             {
                 MerkleTree.Trim(node.LeftChild, index * 2, depth - 1, flags);
                 MerkleTree.Trim(node.RightChild, (index * 2) + 1, depth - 1, flags);
+
                 if (node.LeftChild.LeftChild == null && node.RightChild.RightChild == null)
                 {
                     node.LeftChild = null;

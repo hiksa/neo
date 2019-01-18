@@ -11,11 +11,11 @@ namespace Neo.Extensions
 {
     public static class ScriptBuilderExtensions
     {
-        public static ScriptBuilder Emit(this ScriptBuilder sb, params OpCode[] ops)
+        public static ScriptBuilder Emit(this ScriptBuilder sb, params OpCode[] opcodes)
         {
-            foreach (OpCode op in ops)
+            foreach (var opcode in opcodes)
             {
-                sb.Emit(op);
+                sb.Emit(opcode);
             }
 
             return sb;

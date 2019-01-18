@@ -27,41 +27,41 @@ namespace Neo.Plugins
         {
             if (Directory.Exists(PluginsPath))
             {
-                ConfigWatcher = new FileSystemWatcher(PluginsPath, "*.json")
+                Plugin.ConfigWatcher = new FileSystemWatcher(PluginsPath, "*.json")
                 {
                     EnableRaisingEvents = true,
                     IncludeSubdirectories = true,
                     NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.LastWrite | NotifyFilters.Size,
                 };
 
-                ConfigWatcher.Changed += ConfigWatcherChanged;
-                ConfigWatcher.Created += ConfigWatcherChanged;
+                Plugin.ConfigWatcher.Changed += ConfigWatcherChanged;
+                Plugin.ConfigWatcher.Created += ConfigWatcherChanged;
                 AppDomain.CurrentDomain.AssemblyResolve += CurrentDomainAssemblyResolve;
             }
         }
 
         protected Plugin()
         {
-            Plugins.Add(this);
+            Plugin.Plugins.Add(this);
 
             if (this is ILogPlugin logger)
             {
-                Loggers.Add(logger);
+                Plugin.Loggers.Add(logger);
             }
 
             if (this is IPolicyPlugin policy)
             {
-                Policies.Add(policy);
+                Plugin.Policies.Add(policy);
             }
 
             if (this is IRpcPlugin rpc)
             {
-                RpcPlugins.Add(rpc);
+                Plugin.RpcPlugins.Add(rpc);
             }
 
             if (this is IPersistencePlugin persistence)
             {
-                PersistencePlugins.Add(persistence);
+                Plugin.PersistencePlugins.Add(persistence);
             }
 
             this.Configure();
